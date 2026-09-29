@@ -20,8 +20,8 @@
 - 시험한 날짜:
 - 캡처: self-check/P5-1.png, self-check/P5-2.png
 
-## P7. 처음 받는 사람처럼 설치해서 첫 화면까지 가는지
+## P7. 처음 받는 사람처럼 배포해서 첫 화면까지 가는지
 - 무엇을 했나요:
 - 무엇이 보였나요:
 - 시험한 날짜:
-- 캡처: self-check/P7-1.png, self-check/P7-2.png
+- 캡처: self-check/P7-1.png, self-check/P7-2.png, self-check/P7-3.png

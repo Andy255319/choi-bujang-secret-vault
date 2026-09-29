@@ -31,3 +31,12 @@ test('미구현 서버 뼈대는 성공이나 로그인 통과로 가장하지 �
     assert.match(body.error, /NOT_IMPLEMENTED$/u);
   }
 });
+
+test('P7 시작 틀 안내는 실제 빌드 조건과 새 배포 시험에 맞는다', async () => {
+  const readme = await readFile(new URL('../package/README.md', import.meta.url), 'utf8');
+  const selfCheck = await readFile(new URL('../package/SELF-CHECK.md', import.meta.url), 'utf8');
+  assert.match(readme, /새 Vercel 프로젝트/u);
+  assert.match(readme, /Vercel이 제공하는 저장소·커밋·배포 URL 정보/u);
+  assert.doesNotMatch(readme, /npm start/u);
+  assert.match(selfCheck, /P7-3\.png/u);
+});
