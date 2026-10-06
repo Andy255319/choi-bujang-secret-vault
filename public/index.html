@@ -16,37 +16,115 @@
     li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
     li span { color: #bfd0e5; }
+    
+    /* 추가된 로그인 화면 스타일 */
+    .auth-box { margin-bottom: 30px; padding: 22px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
+    input { padding: 12px; margin-right: 8px; border-radius: 8px; border: 1px solid #51667c; background: #101a28; color: white; font-size: 15px; }
+    button { padding: 12px 20px; border-radius: 8px; border: none; background: #8ad8df; color: #101a28; font-weight: bold; cursor: pointer; font-size: 15px; }
+    button:hover { background: #6bc0c7; }
+    .error-msg { color: #d07384; margin-top: 12px; font-weight: bold; }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
   </style>
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 1단계 피해 확인</div>
-    <h1>점령된 자료실</h1>
-    <p>지금은 보호 장치가 없는 상태입니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
-    <div class="notice">로그인하지 않은 방문자도 자료를 볼 수 있습니다. 공개 범위를 확인하고, 다음 제작 단계에서 접근을 차례로 막아 주세요.</div>
-    <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
+    <div class="eyebrow">BYTE BACK · 3단계 인증 추가</div>
+    <h1>안전한 자료실</h1>
+    
+    <!-- 1. 로그인 전 화면 -->
+    <div id="login-section" class="auth-box">
+      <h2>로그인</h2>
+      <div style="margin-top: 16px;">
+        <input type="email" id="email" placeholder="이메일 주소" required />
+        <input type="password" id="password" placeholder="비밀번호" required />
+        <button id="login-btn">접속하기</button>
+      </div>
+      <div id="login-error" class="error-msg"></div>
+    </div>
+
+    <!-- 2. 로그인 후 화면 (기본 숨김) -->
+    <div id="main-section" style="display: none;">
+      <div class="auth-box flex-between" style="background: #243b55;">
+        <span>정상적으로 로그인되었습니다.</span>
+        <button id="logout-btn">로그아웃</button>
+      </div>
+      
+      <p>아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
+      <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
+    </div>
   </main>
+
   <script type="module">
+    // Supabase 공식 SDK 불러오기
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    // [ ] 안에 당신의 실제 Project URL과 Publishable Key를 홑따옴표 사이에 적어주세요.
+    const SUPABASE_URL = '[ ]'; 
+    const SUPABASE_KEY = '[ ]';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // 화면 요소 선택
+    const loginSection = document.getElementById('login-section');
+    const mainSection = document.getElementById('main-section');
+    const loginError = document.getElementById('login-error');
     const list = document.querySelector('#notes');
-    try {
-      const response = await fetch('/api/notes', { cache: 'no-store' });
-      if (!response.ok) throw new Error('공개 자료를 읽을 수 없습니다.');
-      const data = await response.json();
-      if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-      list.replaceChildren(...data.notes.map(note => {
+
+    // 자료를 불러오는 기존 로직을 함수로 분리
+    async function fetchNotes() {
+      try {
+        const response = await fetch('/api/notes', { cache: 'no-store' });
+        if (!response.ok) throw new Error('공개 자료를 읽을 수 없습니다.');
+        const data = await response.json();
+        if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
+        
+        list.replaceChildren(...data.notes.map(note => {
+          const item = document.createElement('li');
+          const title = document.createElement('strong');
+          const content = document.createElement('span');
+          title.textContent = note.title;
+          content.textContent = note.content;
+          item.append(title, content);
+          return item;
+        }));
+      } catch (error) {
         const item = document.createElement('li');
-        const title = document.createElement('strong');
-        const content = document.createElement('span');
-        title.textContent = note.title;
-        content.textContent = note.content;
-        item.append(title, content);
-        return item;
-      }));
-    } catch (error) {
-      const item = document.createElement('li');
-      item.textContent = error.message;
-      list.replaceChildren(item);
+        item.textContent = error.message;
+        list.replaceChildren(item);
+      }
     }
+
+    // 로그인 버튼 동작
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      loginError.textContent = ''; // 이전 에러 메시지 초기화
+
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        // 실패 시 화면에 원인 표시
+        loginError.textContent = `로그인 실패: ${error.message}`;
+      }
+    });
+
+    // 로그아웃 버튼 동작
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await supabase.auth.signOut();
+    });
+
+    // 상태 감지: 로그인과 로그아웃 시 화면이 다르게 보이도록 제어
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        // 로그인 성공 시
+        loginSection.style.display = 'none';
+        mainSection.style.display = 'block';
+        fetchNotes(); // 메모 불러오기
+      } else {
+        // 로그아웃 상태
+        loginSection.style.display = 'block';
+        mainSection.style.display = 'none';
+        list.innerHTML = '<li>가상 자료를 불러오는 중입니다.</li>'; // 메모 영역 초기화
+      }
+    });
   </script>
 </body>
 </html>
