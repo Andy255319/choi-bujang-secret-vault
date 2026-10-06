@@ -1,7 +1,6 @@
-import { createLoginVerifier } from '../src/verify-login.mjs';
+import { createLoginVerifier } from '../../src/verify-login.mjs';
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 
 export default async function handler(req, res) {
   const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -20,33 +19,44 @@ export default async function handler(req, res) {
     const user = await verifyLogin(authHeader);
     if (!user) return res.status(403).json({ error: "인증 실패" });
 
-    // 1. [목록 GET] - 로그인한 사용자의 메모 배열 반환
+    // URL에서 :id 파라미터 추출
+    const { id } = req.query;
+
+    // 1. [단건 GET] - 소유자 확인 안 함
     if (req.method === 'GET') {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?select=id,title,content&owner_id=eq.${user.userId}`, {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${id}&select=id,title,content`, {
         headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` }
       });
       const data = await response.json();
       
-      // DB의 content를 API 응답 규격인 body로 매핑
-      const mappedData = data.map(n => ({ id: n.id, title: n.title, body: n.content }));
-      return res.status(200).json({ notes: mappedData });
+      if (!data || data.length === 0) return res.status(404).json({ error: "자료를 찾을 수 없습니다 (404)." });
+      
+      const note = { id: data[0].id, title: data[0].title, body: data[0].content };
+      return res.status(200).json(note);
     }
 
-    // 2. [생성 POST] - 전달된 body와 자동 생성된 id, 소유자 id를 저장
-    if (req.method === 'POST') {
-      const { id = crypto.randomUUID(), title, body } = req.body;
-      const payload = { id, title, content: body, owner_id: user.userId };
-
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
-        method: 'POST',
+    // 2. [수정 PUT] - 소유자 확인 안 함 (고의적 취약점)
+    if (req.method === 'PUT') {
+      const { title, body } = req.body;
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${id}`, {
+        method: 'PATCH',
         headers: { 
           'apikey': SUPABASE_SECRET_KEY, 
           'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`, 
           'Content-Type': 'application/json' 
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ title, content: body })
       });
-      
+      if (!response.ok) throw new Error(await response.text());
+      return res.status(200).json({ id });
+    }
+
+    // 3. [삭제 DELETE] - 소유자 확인 안 함 (고의적 취약점)
+    if (req.method === 'DELETE') {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` }
+      });
       if (!response.ok) throw new Error(await response.text());
       return res.status(200).json({ id });
     }
