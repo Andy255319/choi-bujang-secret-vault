@@ -33,7 +33,6 @@
     <div class="eyebrow">BYTE BACK · 4단계 데이터 관리</div>
     <h1>내 자료 관리</h1>
     
-    <!-- 로그인 전 화면 -->
     <div id="login-section" class="auth-box">
       <h2>로그인</h2>
       <input type="email" id="email" placeholder="이메일 주소" />
@@ -42,14 +41,12 @@
       <div id="login-error" class="error-msg"></div>
     </div>
 
-    <!-- 로그인 후 화면 -->
     <div id="main-section" style="display: none;">
       <div class="auth-box flex-between" style="background: #243b55;">
         <span>정상적으로 로그인되었습니다.</span>
         <button id="logout-btn">로그아웃</button>
       </div>
       
-      <!-- 메모 작성 폼 -->
       <div class="auth-box">
         <h3 id="form-title">새 자료 작성</h3>
         <input type="hidden" id="note-id" />
@@ -88,18 +85,23 @@
     async function fetchNotes() {
       try {
         const response = await fetch('/api/notes', { headers: await getAuthHeaders(), cache: 'no-store' });
-        if (!response.ok) throw new Error('목록을 불러올 권한이 없습니다.');
+        if (!response.ok) {
+            const err = await response.json().catch(()=>({}));
+            throw new Error(err.error || '목록을 불러올 권한이 없습니다.');
+        }
         const data = await response.json();
         
+        if (data.notes.length === 0) {
+            list.innerHTML = '<li>아직 등록된 자료가 없습니다.</li>';
+            return;
+        }
+
         list.replaceChildren(...data.notes.map(note => {
           const item = document.createElement('li');
-          
           const title = document.createElement('strong');
           title.textContent = note.title;
-          
           const body = document.createElement('span');
           body.textContent = note.body;
-          
           const btnBox = document.createElement('div');
           
           const editBtn = document.createElement('button');
@@ -121,7 +123,6 @@
       }
     }
 
-    // UI 수정 모드 전환
     function startEdit(id, title, body) {
       document.getElementById('note-id').value = id;
       document.getElementById('note-title').value = title;
@@ -132,7 +133,6 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    // UI 작성 폼 초기화
     document.getElementById('cancel-edit-btn').addEventListener('click', () => {
       document.getElementById('note-id').value = '';
       document.getElementById('note-title').value = '';
@@ -142,7 +142,7 @@
       document.getElementById('cancel-edit-btn').style.display = 'none';
     });
 
-    // 메모 저장 (POST 또는 PUT)
+    // 여기서 에러를 팝업으로 띄워줍니다!
     document.getElementById('save-btn').addEventListener('click', async () => {
       const id = document.getElementById('note-id').value;
       const title = document.getElementById('note-title').value;
@@ -151,29 +151,41 @@
 
       const method = id ? 'PUT' : 'POST';
       const url = id ? `/api/notes/${id}` : '/api/notes';
-      const payload = id ? { title, body } : { title, body }; // POST일때는 id를 보내지 않아 서버가 생성하게 함
+      const payload = id ? { title, body } : { title, body };
 
-      await fetch(url, {
-        method,
-        headers: await getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-      
-      document.getElementById('cancel-edit-btn').click(); // 폼 비우기
-      fetchNotes();
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: await getAuthHeaders(),
+          body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `서버가 저장을 거부했습니다 (상태코드 ${response.status})`);
+        }
+        
+        document.getElementById('cancel-edit-btn').click();
+        fetchNotes();
+      } catch (err) {
+        alert("저장 실패: " + err.message); // 화면에 에러 원인 알림창 띄우기
+      }
     });
 
-    // 메모 삭제 (DELETE)
     async function deleteNote(id) {
       if (!confirm("정말 삭제하시겠습니까?")) return;
-      await fetch(`/api/notes/${id}`, {
-        method: 'DELETE',
-        headers: await getAuthHeaders()
-      });
-      fetchNotes();
+      try {
+        const response = await fetch(`/api/notes/${id}`, {
+          method: 'DELETE',
+          headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error("삭제 실패");
+        fetchNotes();
+      } catch (err) {
+        alert(err.message);
+      }
     }
 
-    // 로그인
     document.getElementById('login-btn').addEventListener('click', async () => {
       const email = document.getElementById('email').value;
       const password = document.getElementById('password').value;
@@ -182,12 +194,10 @@
       if (error) loginError.textContent = `로그인 실패: ${error.message}`;
     });
 
-    // 로그아웃
     document.getElementById('logout-btn').addEventListener('click', async () => {
       await supabase.auth.signOut();
     });
 
-    // 인증 상태 감지
     supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         loginSection.style.display = 'none';
