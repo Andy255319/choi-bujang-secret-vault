@@ -1,3 +1,5 @@
+import { verifyLogin } from '../src/verify-login.mjs';
+
 export default async function handler(req, res) {
   const SUPABASE_URL = process.env.SUPABASE_URL;
   const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
@@ -14,10 +16,7 @@ export default async function handler(req, res) {
 
     const token = authHeader.replace('Bearer ', '');
 
-    // 모듈 방식(default/named) 차이로 인한 서버 크래시를 막기 위해 동적으로 불러옵니다.
-    const authModule = await import('../src/verify-login.mjs');
-    const verifyLogin = authModule.verifyLogin || authModule.default;
-
+    // 제공된 도우미 함수로 토큰 검증
     const isValid = await verifyLogin(token);
     if (!isValid) {
       return res.status(403).json({ error: "인증 검사에 실패했습니다." });
@@ -38,7 +37,6 @@ export default async function handler(req, res) {
     res.status(200).json({ notes: data });
 
   } catch (error) {
-    // 서버가 뻗지 않고 확실하게 에러 사유를 브라우저로 보냅니다.
     console.error("API 내부 에러:", error);
     res.status(500).json({ error: "서버 내부 에러: " + (error.message || error) });
   }
