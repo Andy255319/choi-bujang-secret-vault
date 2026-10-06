@@ -71,27 +71,38 @@
 
     // 자료를 불러오는 기존 로직을 함수로 분리
     async function fetchNotes() {
-      try {
-        const response = await fetch('/api/notes', { cache: 'no-store' });
-        if (!response.ok) throw new Error('공개 자료를 읽을 수 없습니다.');
-        const data = await response.json();
-        if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-        
-        list.replaceChildren(...data.notes.map(note => {
-          const item = document.createElement('li');
-          const title = document.createElement('strong');
-          const content = document.createElement('span');
-          title.textContent = note.title;
-          content.textContent = note.content;
-          item.append(title, content);
-          return item;
-        }));
-      } catch (error) {
-        const item = document.createElement('li');
-        item.textContent = error.message;
-        list.replaceChildren(item);
+  try {
+    // 현재 로그인된 세션 가져오기
+    const { data: { session } } = await supabase.auth.getSession();
+    const accessToken = session ? session.access_token : '';
+
+    // 토큰을 헤더에 담아서 API 요청
+    const response = await fetch('/api/notes', { 
+      cache: 'no-store',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
       }
-    }
+    });
+
+    if (!response.ok) throw new Error('로그인이 필요하거나 권한이 없습니다.');
+    const data = await response.json();
+    if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
+    
+    list.replaceChildren(...data.notes.map(note => {
+      const item = document.createElement('li');
+      const title = document.createElement('strong');
+      const content = document.createElement('span');
+      title.textContent = note.title;
+      content.textContent = note.content;
+      item.append(title, content);
+      return item;
+    }));
+  } catch (error) {
+    const item = document.createElement('li');
+    item.textContent = error.message;
+    list.replaceChildren(item);
+  }
+}
 
     // 로그인 버튼 동작
     document.getElementById('login-btn').addEventListener('click', async () => {
