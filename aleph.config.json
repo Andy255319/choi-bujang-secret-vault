@@ -1,11 +1,3 @@
 {
-  "step": 1,
-  "repoUrl": "https://github.com/Andy255319/choi-bujang-secret-vault",
-  "publicAppUrl": "https://choi-bujang-secret-vault-kappa.vercel.app",
-  "sampleMarker": "SAMPLE_NOTE_1",
-  "judgeIssuer": "https://aleph-judge-production.up.railway.app/defense/judge",
-  "identityProvider": null,
-  "allowedRoutes": [],
-  "originalApiUrl": null,
-  "restoreRoute": null
+  "identityProvider": "https://aqeglcbdaaaixmznyavk.supabase.co/auth/v1"
 }
