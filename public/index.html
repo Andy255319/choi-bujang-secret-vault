@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BYTE BACK | 점령된 자료실</title>
+  <title>BYTE BACK | 안전한 자료실</title>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     body { margin: 0; min-height: 100vh; background: #101a28; color: #ecf4ff; }
@@ -11,42 +11,56 @@
     .eyebrow { color: #8ad8df; font-size: 14px; font-weight: 700; letter-spacing: .08em; }
     h1 { margin: 16px 0; font-size: clamp(30px, 7vw, 48px); line-height: 1.2; }
     p { font-size: 17px; line-height: 1.7; color: #bfd0e5; }
-    .notice { margin: 26px 0; padding: 18px; border: 1px solid #d07384; border-radius: 14px; color: #ffe3e8; background: #612a3544; }
     ul { list-style: none; display: grid; gap: 12px; padding: 0; }
-    li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
+    li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; position: relative;}
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
-    li span { color: #bfd0e5; }
+    li span { color: #bfd0e5; display: block; margin-bottom: 15px;}
     
     .auth-box { margin-bottom: 30px; padding: 22px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
-    input { padding: 12px; margin-right: 8px; border-radius: 8px; border: 1px solid #51667c; background: #101a28; color: white; font-size: 15px; }
+    input, textarea { padding: 12px; border-radius: 8px; border: 1px solid #51667c; background: #101a28; color: white; font-size: 15px; width: 100%; box-sizing: border-box; margin-bottom: 10px;}
+    textarea { resize: vertical; min-height: 80px; }
     button { padding: 12px 20px; border-radius: 8px; border: none; background: #8ad8df; color: #101a28; font-weight: bold; cursor: pointer; font-size: 15px; }
     button:hover { background: #6bc0c7; }
+    .btn-small { padding: 6px 12px; font-size: 13px; margin-right: 6px; }
+    .btn-danger { background: #d07384; color: white; }
+    .btn-danger:hover { background: #b05c6d; }
     .error-msg { color: #d07384; margin-top: 12px; font-weight: bold; }
     .flex-between { display: flex; justify-content: space-between; align-items: center; }
   </style>
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 3단계 인증 추가</div>
-    <h1>안전한 자료실</h1>
+    <div class="eyebrow">BYTE BACK · 4단계 데이터 관리</div>
+    <h1>내 자료 관리</h1>
     
+    <!-- 로그인 전 화면 -->
     <div id="login-section" class="auth-box">
       <h2>로그인</h2>
-      <div style="margin-top: 16px;">
-        <input type="email" id="email" placeholder="이메일 주소" required />
-        <input type="password" id="password" placeholder="비밀번호" required />
-        <button id="login-btn">접속하기</button>
-      </div>
+      <input type="email" id="email" placeholder="이메일 주소" />
+      <input type="password" id="password" placeholder="비밀번호" />
+      <button id="login-btn">접속하기</button>
       <div id="login-error" class="error-msg"></div>
     </div>
 
+    <!-- 로그인 후 화면 -->
     <div id="main-section" style="display: none;">
       <div class="auth-box flex-between" style="background: #243b55;">
         <span>정상적으로 로그인되었습니다.</span>
         <button id="logout-btn">로그아웃</button>
       </div>
       
-      <p>아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
+      <!-- 메모 작성 폼 -->
+      <div class="auth-box">
+        <h3 id="form-title">새 자료 작성</h3>
+        <input type="hidden" id="note-id" />
+        <input type="text" id="note-title" placeholder="제목을 입력하세요" />
+        <textarea id="note-body" placeholder="내용을 입력하세요"></textarea>
+        <div>
+          <button id="save-btn">저장하기</button>
+          <button id="cancel-edit-btn" style="display: none; background: #51667c; color: white; margin-left: 8px;">취소</button>
+        </div>
+      </div>
+
       <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
     </div>
   </main>
@@ -63,60 +77,117 @@
     const loginError = document.getElementById('login-error');
     const list = document.querySelector('#notes');
 
+    async function getAuthHeaders() {
+      const { data: { session } } = await supabase.auth.getSession();
+      return {
+        'Authorization': `Bearer ${session ? session.access_token : ''}`,
+        'Content-Type': 'application/json'
+      };
+    }
+
     async function fetchNotes() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const accessToken = session ? session.access_token : '';
-
-        const response = await fetch('/api/notes', { 
-          cache: 'no-store',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        });
-
-        if (!response.ok) {
-          // 서버가 보내온 진짜 에러 메시지를 꺼냅니다.
-          const errData = await response.json().catch(() => ({ error: '알 수 없는 응답' }));
-          throw new Error(`[서버 거부] ${errData.error} (상태코드: ${response.status})`);
-        }
-        
+        const response = await fetch('/api/notes', { headers: await getAuthHeaders(), cache: 'no-store' });
+        if (!response.ok) throw new Error('목록을 불러올 권한이 없습니다.');
         const data = await response.json();
-        if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
         
         list.replaceChildren(...data.notes.map(note => {
           const item = document.createElement('li');
+          
           const title = document.createElement('strong');
-          const content = document.createElement('span');
           title.textContent = note.title;
-          content.textContent = note.content;
-          item.append(title, content);
+          
+          const body = document.createElement('span');
+          body.textContent = note.body;
+          
+          const btnBox = document.createElement('div');
+          
+          const editBtn = document.createElement('button');
+          editBtn.className = 'btn-small';
+          editBtn.textContent = '수정';
+          editBtn.onclick = () => startEdit(note.id, note.title, note.body);
+          
+          const delBtn = document.createElement('button');
+          delBtn.className = 'btn-small btn-danger';
+          delBtn.textContent = '삭제';
+          delBtn.onclick = () => deleteNote(note.id);
+          
+          btnBox.append(editBtn, delBtn);
+          item.append(title, body, btnBox);
           return item;
         }));
       } catch (error) {
-        const item = document.createElement('li');
-        item.style.color = '#d07384';
-        item.style.fontWeight = 'bold';
-        item.textContent = error.message; // 구체적인 에러 표시
-        list.replaceChildren(item);
+        list.innerHTML = `<li style="color:#d07384; font-weight:bold;">${error.message}</li>`;
       }
     }
 
+    // UI 수정 모드 전환
+    function startEdit(id, title, body) {
+      document.getElementById('note-id').value = id;
+      document.getElementById('note-title').value = title;
+      document.getElementById('note-body').value = body;
+      document.getElementById('form-title').textContent = '자료 수정';
+      document.getElementById('save-btn').textContent = '수정하기';
+      document.getElementById('cancel-edit-btn').style.display = 'inline-block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // UI 작성 폼 초기화
+    document.getElementById('cancel-edit-btn').addEventListener('click', () => {
+      document.getElementById('note-id').value = '';
+      document.getElementById('note-title').value = '';
+      document.getElementById('note-body').value = '';
+      document.getElementById('form-title').textContent = '새 자료 작성';
+      document.getElementById('save-btn').textContent = '저장하기';
+      document.getElementById('cancel-edit-btn').style.display = 'none';
+    });
+
+    // 메모 저장 (POST 또는 PUT)
+    document.getElementById('save-btn').addEventListener('click', async () => {
+      const id = document.getElementById('note-id').value;
+      const title = document.getElementById('note-title').value;
+      const body = document.getElementById('note-body').value;
+      if (!title || !body) return alert("제목과 내용을 모두 입력하세요.");
+
+      const method = id ? 'PUT' : 'POST';
+      const url = id ? `/api/notes/${id}` : '/api/notes';
+      const payload = id ? { title, body } : { title, body }; // POST일때는 id를 보내지 않아 서버가 생성하게 함
+
+      await fetch(url, {
+        method,
+        headers: await getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      
+      document.getElementById('cancel-edit-btn').click(); // 폼 비우기
+      fetchNotes();
+    });
+
+    // 메모 삭제 (DELETE)
+    async function deleteNote(id) {
+      if (!confirm("정말 삭제하시겠습니까?")) return;
+      await fetch(`/api/notes/${id}`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders()
+      });
+      fetchNotes();
+    }
+
+    // 로그인
     document.getElementById('login-btn').addEventListener('click', async () => {
       const email = document.getElementById('email').value;
       const password = document.getElementById('password').value;
       loginError.textContent = ''; 
-
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        loginError.textContent = `로그인 실패: ${error.message}`;
-      }
+      if (error) loginError.textContent = `로그인 실패: ${error.message}`;
     });
 
+    // 로그아웃
     document.getElementById('logout-btn').addEventListener('click', async () => {
       await supabase.auth.signOut();
     });
 
+    // 인증 상태 감지
     supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         loginSection.style.display = 'none';
