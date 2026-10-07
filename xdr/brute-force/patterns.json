@@ -1,0 +1,19 @@
+{
+  "technique": {
+    "id": "T1110",
+    "name": "Brute Force",
+    "source": "MITRE ATT&CK"
+  },
+  "patterns": [
+    {
+      "name": "동일 출발 주소의 단시간 연속 로그인 실패",
+      "condition": "짧은 시간 동안 같은 출발 주소에서 로그인 실패가 연속으로 발생하는지 찾습니다.",
+      "evidence": "MITRE ATT&CK T1110은 반복적인 자격 증명 시도를 다루며, 동일 주소의 단시간 연속 로그인 실패는 무차별 대입 시도 신호입니다."
+    },
+    {
+      "name": "여러 계정에 같은 비밀번호 대입",
+      "condition": "여러 계정의 로그인 시도에서 동일한 비밀번호가 반복 사용되는지 찾습니다.",
+      "evidence": "MITRE ATT&CK T1110.003(Password Spraying)은 하나의 비밀번호를 여러 계정에 대입하는 T1110 하위 기법입니다."
+    }
+  ]
+}
