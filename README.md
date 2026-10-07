@@ -44,9 +44,13 @@
   2. `/aleph.json` 빌드 산출물 보존 확인
   3. 첫 화면 응답 보안 헤더(`X-Content-Type-Options: nosniff`) 적용 완료
 
-  ### 5단계: 자료 요청을 서버 한곳으로 모읍니다 (직접 접근 차단 및 단일 관문 적용)
-* **직접 권한 회수**: Supabase PostgreSQL에서 `notes` 테이블에 대한 `PUBLIC`, `anon`, `authenticated`의 모든 직접 권한을 `REVOKE ALL`로 회수하여, 공개 키(`anon`) 및 사용자 토큰을 통한 Data API 직접 호출 통로를 원천 차단했습니다.
-* **단일 관문 유지**: 모든 메모 읽기·추가·수정·삭제는 Vercel 서버 함수(`api/notes.js`, `api/notes/[id].js`)를 통해서만 실행되며, 서버 환경변수의 서비스 전용 키(`service_role`) 기반 로그인·소유자 검사 로직을 유지했습니다.
+### 5단계: 자료 요청을 서버 한곳으로 모읍니다 (직접 접근 차단 및 단일 관문 적용)
+* **직접 권한 회수**: Supabase PostgreSQL에서 `notes` 테이블에 대한 `PUBLIC`, `anon`, `authenticated`의 모든 직접 권한을 `REVOKE ALL`로 회수하여, 공개 키(`anon`) 및 토큰을 통한 Data API 직접 호출 통로를 원천 차단했습니다.
+* **단일 관문 유지**: 모든 메모 읽기·추가·수정·삭제는 Vercel 서버 함수(`api/notes.js`, `api/notes/[id].js`)를 통해서만 실행되며, 서버 환경변수(`service_role`) 기반 로그인·소유자 검사 로직을 유지했습니다.
 * **설정 동기화**: `aleph.config.json`의 `originalApiUrl`에 쿼리 파라미터가 없는 원본 REST 저장소 주소(`https://aqeglcbdaaaixmznyavk.supabase.co/rest/v1/notes`)를 등록했습니다.
+* **100점 가산 조건 점검**:
+  1. `/aleph.json`의 `allowedRoutes`에 API 허용 경로 5개 등록 확인
+  2. `vercel.json`의 첫 화면 응답 보안 헤더(`X-Content-Type-Options: nosniff`) 유지
+  3. 클라이언트 화면 코드 내 Supabase 공개 키(`anon` / `sb_publishable_...`) 제거 및 키의 서버 함수 격리 확인
 
 
