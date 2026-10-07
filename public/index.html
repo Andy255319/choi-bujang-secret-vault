@@ -30,7 +30,7 @@
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 4단계 데이터 관리</div>
+    <div class="eyebrow">BYTE BACK · 5단계 데이터 관리</div>
     <h1>내 자료 관리</h1>
     
     <div id="login-section" class="auth-box">
@@ -65,9 +65,15 @@
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-    const SUPABASE_URL = 'https://aqeglcbdaaaixmznyavk.supabase.co'; 
-    const SUPABASE_KEY = '';
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    let supabase = null;
+
+    async function getSupabase() {
+      if (supabase) return supabase;
+      const res = await fetch('/api/config', { cache: 'no-store' });
+      const cfg = await res.json();
+      supabase = createClient(cfg.supabaseUrl, cfg.supabaseKey);
+      return supabase;
+    }
 
     const loginSection = document.getElementById('login-section');
     const mainSection = document.getElementById('main-section');
@@ -75,7 +81,8 @@
     const list = document.querySelector('#notes');
 
     async function getAuthHeaders() {
-      const { data: { session } } = await supabase.auth.getSession();
+      const sb = await getSupabase();
+      const { data: { session } } = await sb.auth.getSession();
       return {
         'Authorization': `Bearer ${session ? session.access_token : ''}`,
         'Content-Type': 'application/json'
@@ -86,14 +93,14 @@
       try {
         const response = await fetch('/api/notes', { headers: await getAuthHeaders(), cache: 'no-store' });
         if (!response.ok) {
-            const err = await response.json().catch(()=>({}));
-            throw new Error(err.error || '목록을 불러올 권한이 없습니다.');
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || '목록을 불러올 권한이 없습니다.');
         }
         const data = await response.json();
         
         if (data.notes.length === 0) {
-            list.innerHTML = '<li>아직 등록된 자료가 없습니다.</li>';
-            return;
+          list.innerHTML = '<li>아직 등록된 자료가 없습니다.</li>';
+          return;
         }
 
         list.replaceChildren(...data.notes.map(note => {
@@ -142,7 +149,6 @@
       document.getElementById('cancel-edit-btn').style.display = 'none';
     });
 
-    // 여기서 에러를 팝업으로 띄워줍니다!
     document.getElementById('save-btn').addEventListener('click', async () => {
       const id = document.getElementById('note-id').value;
       const title = document.getElementById('note-title').value;
@@ -151,7 +157,7 @@
 
       const method = id ? 'PUT' : 'POST';
       const url = id ? `/api/notes/${id}` : '/api/notes';
-      const payload = id ? { title, body } : { title, body };
+      const payload = { title, body };
 
       try {
         const response = await fetch(url, {
@@ -168,7 +174,7 @@
         document.getElementById('cancel-edit-btn').click();
         fetchNotes();
       } catch (err) {
-        alert("저장 실패: " + err.message); // 화면에 에러 원인 알림창 띄우기
+        alert("저장 실패: " + err.message);
       }
     });
 
@@ -190,25 +196,30 @@
       const email = document.getElementById('email').value;
       const password = document.getElementById('password').value;
       loginError.textContent = ''; 
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const sb = await getSupabase();
+      const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) loginError.textContent = `로그인 실패: ${error.message}`;
     });
 
     document.getElementById('logout-btn').addEventListener('click', async () => {
-      await supabase.auth.signOut();
+      const sb = await getSupabase();
+      await sb.auth.signOut();
     });
 
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        loginSection.style.display = 'none';
-        mainSection.style.display = 'block';
-        fetchNotes();
-      } else {
-        loginSection.style.display = 'block';
-        mainSection.style.display = 'none';
-        list.innerHTML = '<li>가상 자료를 불러오는 중입니다.</li>';
-      }
-    });
+    (async () => {
+      const sb = await getSupabase();
+      sb.auth.onAuthStateChange((event, session) => {
+        if (session) {
+          loginSection.style.display = 'none';
+          mainSection.style.display = 'block';
+          fetchNotes();
+        } else {
+          loginSection.style.display = 'block';
+          mainSection.style.display = 'none';
+          list.innerHTML = '<li>가상 자료를 불러오는 중입니다.</li>';
+        }
+      });
+    })();
   </script>
 </body>
 </html>
