@@ -19,45 +19,57 @@ export default async function handler(req, res) {
     const user = await verifyLogin(authHeader);
     if (!user) return res.status(403).json({ error: "인증 실패" });
 
-    // URL에서 :id 파라미터 추출
     const { id } = req.query;
 
-    // 1. [단건 GET] - 소유자 확인 안 함
+    // [단건 GET] - ID와 소유자가 모두 일치해야만 반환
     if (req.method === 'GET') {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${id}&select=id,title,content`, {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${id}&owner_id=eq.${user.userId}&select=id,title,content`, {
         headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` }
       });
       const data = await response.json();
       
-      if (!data || data.length === 0) return res.status(404).json({ error: "자료를 찾을 수 없습니다 (404)." });
+      if (!data || data.length === 0) return res.status(404).json({ error: "자료를 찾을 수 없거나 접근 권한이 없습니다." });
       
       const note = { id: data[0].id, title: data[0].title, body: data[0].content };
       return res.status(200).json(note);
     }
 
-    // 2. [수정 PUT] - 소유자 확인 안 함 (고의적 취약점)
+    // [수정 PUT] - 기존 행의 주인이 본인인지 확인(URL 쿼리) + 새 행의 주인도 본인으로 유지(body)
     if (req.method === 'PUT') {
       const { title, body } = req.body;
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${id}`, {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${id}&owner_id=eq.${user.userId}`, {
         method: 'PATCH',
         headers: { 
           'apikey': SUPABASE_SECRET_KEY, 
           'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`, 
-          'Content-Type': 'application/json' 
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
         },
-        body: JSON.stringify({ title, content: body })
+        body: JSON.stringify({ title, content: body, owner_id: user.userId })
       });
-      if (!response.ok) throw new Error(await response.text());
+      
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "수정 실패");
+      if (result.length === 0) return res.status(404).json({ error: "수정 권한이 없거나 자료가 없습니다." });
+      
       return res.status(200).json({ id });
     }
 
-    // 3. [삭제 DELETE] - 소유자 확인 안 함 (고의적 취약점)
+    // [삭제 DELETE] - 주인이 일치할 때만 삭제 허용
     if (req.method === 'DELETE') {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${id}`, {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${id}&owner_id=eq.${user.userId}`, {
         method: 'DELETE',
-        headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` }
+        headers: { 
+          'apikey': SUPABASE_SECRET_KEY, 
+          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+          'Prefer': 'return=representation' 
+        }
       });
-      if (!response.ok) throw new Error(await response.text());
+      
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "삭제 실패");
+      if (result.length === 0) return res.status(404).json({ error: "삭제 권한이 없거나 자료가 없습니다." });
+      
       return res.status(200).json({ id });
     }
 

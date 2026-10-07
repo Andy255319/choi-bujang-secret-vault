@@ -20,19 +20,18 @@ export default async function handler(req, res) {
     const user = await verifyLogin(authHeader);
     if (!user) return res.status(403).json({ error: "인증 실패" });
 
-    // 1. [목록 GET] - 로그인한 사용자의 메모 배열 반환
+    // [목록 GET] - 본인 메모만 반환
     if (req.method === 'GET') {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?select=id,title,content&owner_id=eq.${user.userId}`, {
         headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` }
       });
       const data = await response.json();
       
-      // DB의 content를 API 응답 규격인 body로 매핑
       const mappedData = data.map(n => ({ id: n.id, title: n.title, body: n.content }));
       return res.status(200).json({ notes: mappedData });
     }
 
-    // 2. [생성 POST] - 전달된 body와 자동 생성된 id, 소유자 id를 저장
+    // [생성 POST] - 클라이언트 데이터를 믿지 않고, 검증된 사용자 ID로만 소유자 지정
     if (req.method === 'POST') {
       const { id = crypto.randomUUID(), title, body } = req.body;
       const payload = { id, title, content: body, owner_id: user.userId };
