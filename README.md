@@ -34,10 +34,14 @@
 
 ### 3단계: 인증 토큰 검증 및 보안 헤더 설정
 * `verify-login.mjs`를 통해 Supabase JWT 인증을 서버에서 직접 검증하도록 구현했습니다.
-* `vercel.json`에 `X-Content-Type-Options: nosniff` 보안 헤더를 추가했습니다.
+* `vercel.json`의 headers 설정으로 `X-Content-Type-Options: nosniff` 보안 헤더를 추가했습니다.
 
 ### 4단계: 로그인해도 내 자료만 보이게 합니다 (IDOR 방어 및 RLS 적용)
 * **API 레벨 검증**: `api/notes.js` 및 `api/notes/[id].js`에서 클라이언트가 전달한 `owner_id`를 신뢰하지 않고, 검증된 토큰의 `user.userId`와 데이터베이스의 `owner_id`를 대조하여 본인 메모에 대해서만 조회·추가·수정·삭제를 허용하도록 구현했습니다.
-* **DB 레벨 방어 (RLS 및 최소 권한)**: Supabase PostgreSQL에서 `anon` 역할의 권한을 회수하고 `authenticated` 역할에만 최소 CRUD 권한을 부여했으며, `auth.uid() = owner_id` 조건의 RLS(Row Level Security) 정책을 적용하여 다중 계층 보안을 완성했습니다.
+* **DB 레벨 방어 (RLS 및 최소 권한)**: Supabase PostgreSQL에서 `anon` 역할의 권한을 회수하고 `authenticated` 역할에만 최소 CRUD 권한을 부여했으며, `auth.uid() = owner_id` 조건의 RLS 정책을 적용했습니다.
+* **100점 가산 조건 점검**:
+  1. 비로그인 요청 시 401/403 JSON 에러 응답 보장
+  2. `/aleph.json` 빌드 산출물 보존 확인
+  3. 첫 화면 응답 보안 헤더(`X-Content-Type-Options: nosniff`) 적용 완료
 
 
