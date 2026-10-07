@@ -25,7 +25,7 @@ function getAlertSignals(alert) {
   const failureCount = Number.isFinite(parsedCount) && parsedCount >= 0 ? parsedCount : null;
   const durationMatch = description.match(/(\d+)\s*분/);
   const durationMinutes = durationMatch ? Number(durationMatch[1]) : null;
-  const hasLoginFailure = /실패|로그인 실패/i.test(description);
+  const hasLoginFailure = /실패|로그인 실패|(?:같은|동일) 비밀번호.*(?:넣|대입)/i.test(description);
   const hasMultipleAccounts = /여러 계정|서로 다른 계정|다른 계정|계정\s*\d+\s*개/.test(description);
   const samePassword = /같은 비밀번호|동일 비밀번호/.test(description);
 
