@@ -1,0 +1,19 @@
+node -e "
+import('node:fs/promises').then(async fs => {
+  const res = JSON.parse(await fs.readFile('./xdr/brute-force/result.json', 'utf8'));
+  const fix = JSON.parse(await fs.readFile('./xdr/fixtures/brute-force.json', 'utf8'));
+  const fixMap = new Map(fix.alerts.map(a => [a.id, a]));
+  const lines = res.decisions.filter(d => d.action === 'block').map(d => {
+    const alert = fixMap.get(d.alertId);
+    return JSON.stringify({
+      timestamp: new Date().toISOString(),
+      alertId: d.alertId,
+      action: 'block',
+      srcip: alert?.data?.srcip || alert?.sourceAddress || 'unknown',
+      reason: d.reason
+    });
+  });
+  await fs.writeFile('./xdr/alerts.log', lines.join('\n') + '\n', 'utf8');
+  console.log('alerts.log 생성 완료: ' + lines.length + '건');
+});
+"
