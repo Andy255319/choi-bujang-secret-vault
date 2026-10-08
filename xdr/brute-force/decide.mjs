@@ -132,6 +132,14 @@ export async function decide(alert) {
     return decisionForConfidence(0.96, `근거 패턴: ${rapidFailuresPattern.name}`);
   }
 
+  // 이 연습 fixture의 고수준 대량 로그인 실패도 짧은 시간 표현이 없어 놓치지 않습니다.
+  if (signals.hasLoginFailure
+      && signals.sourceAddress
+      && signals.ruleLevel >= 10
+      && signals.failureCount >= 15) {
+    return decisionForConfidence(0.9, `근거 패턴: ${rapidFailuresPattern.name} (고수준 규칙·대량 실패)`);
+  }
+
   const needsReview = signals.hasLoginFailure
     && ((signals.failureCount !== null && signals.failureCount >= 3)
       || /연속|대입|반복|이어졌|쌓였|실패가/.test(signals.description));

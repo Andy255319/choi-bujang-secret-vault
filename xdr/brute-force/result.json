@@ -28,9 +28,9 @@
     },
     {
       "alertId": "bf-05",
-      "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 여러 계정에 같은 비밀번호 대입 (Jev 응답 없음 또는 시간 초과)"
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (고수준 규칙·대량 실패)"
     },
     {
       "alertId": "bf-06",
@@ -40,15 +40,15 @@
     },
     {
       "alertId": "bf-07",
-      "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (고수준 규칙·대량 실패)"
     },
     {
       "alertId": "bf-08",
-      "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (고수준 규칙·대량 실패)"
     },
     {
       "alertId": "bf-09",
@@ -58,9 +58,9 @@
     },
     {
       "alertId": "bf-10",
-      "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (고수준 규칙·대량 실패)"
     },
     {
       "alertId": "bf-11",
@@ -172,8 +172,8 @@
     }
   ],
   "counts": {
-    "block": 6,
-    "alert": 13,
+    "block": 10,
+    "alert": 9,
     "record": 9
   }
 }
