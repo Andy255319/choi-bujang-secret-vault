@@ -54,3 +54,5 @@
   3. 클라이언트 화면 코드 내 Supabase 공개 키(`anon` / `sb_publishable_...`) 제거 및 키의 서버 함수 격리 확인
 
 
+
+
