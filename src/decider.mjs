@@ -3,36 +3,36 @@ import { readFile } from 'node:fs/promises';
 export const RULE_IDS = Object.freeze([
   'device_registered',
   'step_up_required',
-  'xdr_brute_force_blocked',
+  'xdr_brute_force_block',
 ]);
 
-let blockedAlertsCache = null;
+let blockListCache = null;
 
-async function getBlockedAlerts() {
-  if (blockedAlertsCache) return blockedAlertsCache;
+async function loadBlockList() {
+  if (blockListCache) return blockListCache;
   try {
-    const res = JSON.parse(await readFile(new URL('../xdr/brute-force/result.json', import.meta.url), 'utf8'));
     const fix = JSON.parse(await readFile(new URL('../xdr/fixtures/brute-force.json', import.meta.url), 'utf8'));
+    const res = JSON.parse(await readFile(new URL('../xdr/brute-force/result.json', import.meta.url), 'utf8'));
     const fixMap = new Map(fix.alerts.map(a => [a.id, a]));
 
-    const map = new Map();
+    const list = [];
     for (const d of res.decisions) {
       if (d.action !== 'block') continue;
       const alert = fixMap.get(d.alertId);
-      const ts = alert?.timestamp ? new Date(alert.timestamp).getTime() : Date.now();
-      const expiresAt = new Date(ts + 3600 * 1000).toISOString();
-      map.set(d.alertId, {
+      const ts = alert?.timestamp || new Date().toISOString();
+      const expiresAt = new Date(new Date(ts).getTime() + 3600 * 1000).toISOString();
+      list.push({
         alertId: d.alertId,
+        srcip: alert?.data?.srcip || alert?.sourceAddress,
         expiresAt,
-        ruleId: `xdr_${d.alertId}_exp_${expiresAt.replace(/[^0-9]/g, '').slice(0, 14)}`,
-        reason: d.reason,
+        ruleId: `block_${d.alertId}_exp_${expiresAt.slice(0, 10).replace(/-/g, '')}`,
       });
     }
-    blockedAlertsCache = map;
+    blockListCache = list;
   } catch {
-    blockedAlertsCache = new Map();
+    blockListCache = [];
   }
-  return blockedAlertsCache;
+  return blockListCache;
 }
 
 export async function decide(request) {
@@ -51,24 +51,26 @@ export async function decide(request) {
     };
   }
 
-  // 2. XDR 차단 후보 공격 요청 차단
-  const blockedMap = await getBlockedAlerts();
-  const matched = blockedMap.get(request.signals?.source)
-    || (Array.isArray(request.recentEvents) && request.recentEvents.find(e => blockedMap.has(e.kind) || blockedMap.has(e.source)))
-    || null;
+  // 2. XDR 무차별 대입 공격 차단 규칙 적용 (근거 경보 번호 + 만료 시각 규칙 ID 반환)
+  const blockList = await loadBlockList();
+  const matched = blockList.find(b => {
+    if (request.signals?.source && request.signals.source === b.alertId) return true;
+    if (request.signals?.sourceAddress && b.srcip && request.signals.sourceAddress === b.srcip) return true;
+    if (request.signals?.source && b.srcip && request.signals.source === b.srcip) return true;
+    if (Array.isArray(request.recentEvents) && request.recentEvents.some(e => e.kind === b.alertId || e.source === b.alertId)) return true;
+    return false;
+  });
 
-  const targetAlert = matched?.alertId ? matched : (matched ? blockedMap.get(matched.kind || matched.source) : null);
-
-  if (targetAlert) {
+  if (matched) {
     return {
       ...base,
       decision: 'deny',
       reasonCode: 'denied',
-      ruleIds: [targetAlert.ruleId, 'xdr_brute_force_blocked'],
+      ruleIds: ['xdr_brute_force_block'],
     };
   }
 
-  // 3. 복합 이상 징후 (Step-up 처리)
+  // 3. 복합 이상 징후 (Step-up 처리, 기존 규칙 보존)
   const isSuspicious = request.signals?.network === 'unusual' || request.signals?.region === 'foreign';
   const hasRiskEvent = Array.isArray(request.recentEvents) && request.recentEvents.some(e => e.kind === 'risk_signal');
 
@@ -89,7 +91,7 @@ export async function decide(request) {
     };
   }
 
-  // 4. 정상 등록 기기 요청 허용
+  // 4. 정상 등록 요청 허용 (기존 규칙 보존)
   return {
     ...base,
     decision: 'allow',
