@@ -6,174 +6,174 @@
       "alertId": "bf-01",
       "action": "block",
       "confidence": 0.95,
-      "reason": "근거 경보 [bf-01]: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "reason": "차단 규칙: 경보 [bf-01] 기반 동일 출발 주소의 단시간 연속 로그인 실패 차단 (만료: 2026-09-27T01:12:01.000Z)"
     },
     {
       "alertId": "bf-02",
-      "action": "block",
-      "confidence": 0.98,
-      "reason": "근거 경보 [bf-02]: 여러 계정에 같은 비밀번호 대입"
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "정상 활동 기록 [bf-02]"
     },
     {
       "alertId": "bf-03",
       "action": "block",
       "confidence": 0.95,
-      "reason": "근거 경보 [bf-03]: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "reason": "차단 규칙: 경보 [bf-03] 기반 동일 출발 주소의 단시간 연속 로그인 실패 차단 (만료: 2026-09-27T01:14:02.000Z)"
     },
     {
       "alertId": "bf-04",
       "action": "block",
       "confidence": 0.95,
-      "reason": "근거 경보 [bf-04]: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "reason": "차단 규칙: 경보 [bf-04] 기반 동일 출발 주소의 단시간 연속 로그인 실패 차단 (만료: 2026-09-27T01:20:11.000Z)"
     },
     {
       "alertId": "bf-05",
       "action": "block",
-      "confidence": 0.98,
-      "reason": "근거 경보 [bf-05]: 여러 계정에 같은 비밀번호 대입"
+      "confidence": 0.95,
+      "reason": "차단 규칙: 경보 [bf-05] 기반 여러 계정에 같은 비밀번호 대입 차단 (만료: 2026-09-27T01:21:00.000Z)"
     },
     {
       "alertId": "bf-06",
       "action": "block",
       "confidence": 0.95,
-      "reason": "근거 경보 [bf-06]: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "reason": "차단 규칙: 경보 [bf-06] 기반 동일 출발 주소의 단시간 연속 로그인 실패 차단 (만료: 2026-09-27T03:02:15.000Z)"
     },
     {
       "alertId": "bf-07",
       "action": "block",
       "confidence": 0.95,
-      "reason": "근거 경보 [bf-07]: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "reason": "차단 규칙: 경보 [bf-07] 기반 동일 출발 주소의 단시간 연속 로그인 실패 차단 (만료: 2026-09-27T03:05:40.000Z)"
     },
     {
       "alertId": "bf-08",
       "action": "block",
       "confidence": 0.95,
-      "reason": "근거 경보 [bf-08]: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "reason": "차단 규칙: 경보 [bf-08] 기반 동일 출발 주소의 단시간 연속 로그인 실패 차단 (만료: 2026-09-27T05:10:02.000Z)"
     },
     {
       "alertId": "bf-09",
       "action": "block",
-      "confidence": 0.98,
-      "reason": "근거 경보 [bf-09]: 여러 계정에 같은 비밀번호 대입"
+      "confidence": 0.95,
+      "reason": "차단 규칙: 경보 [bf-09] 기반 여러 계정에 같은 비밀번호 대입 차단 (만료: 2026-09-27T06:22:18.000Z)"
     },
     {
       "alertId": "bf-10",
       "action": "block",
       "confidence": 0.95,
-      "reason": "근거 경보 [bf-10]: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "reason": "차단 규칙: 경보 [bf-10] 기반 동일 출발 주소의 단시간 연속 로그인 실패 차단 (만료: 2026-09-27T07:40:01.000Z)"
     },
     {
       "alertId": "bf-11",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "근거 경보 [bf-11]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
+      "reason": "모니터링 경보 [bf-11]: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음)"
     },
     {
       "alertId": "bf-12",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "근거 경보 [bf-12]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
+      "reason": "모니터링 경보 [bf-12]: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음)"
     },
     {
       "alertId": "bf-13",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "근거 경보 [bf-13]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
+      "reason": "모니터링 경보 [bf-13]: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음)"
     },
     {
       "alertId": "bf-14",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "근거 경보 [bf-14]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
+      "reason": "모니터링 경보 [bf-14]: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음)"
     },
     {
       "alertId": "bf-15",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "근거 경보 [bf-15]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
+      "reason": "모니터링 경보 [bf-15]: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음)"
     },
     {
       "alertId": "bf-16",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "근거 경보 [bf-16]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
+      "reason": "모니터링 경보 [bf-16]: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음)"
     },
     {
       "alertId": "bf-17",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "근거 경보 [bf-17]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
+      "reason": "모니터링 경보 [bf-17]: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음)"
     },
     {
       "alertId": "bf-18",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "근거 경보 [bf-18]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
+      "reason": "모니터링 경보 [bf-18]: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음)"
     },
     {
       "alertId": "bf-19",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "근거 경보 [bf-19]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
+      "reason": "모니터링 경보 [bf-19]: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음)"
     },
     {
       "alertId": "bf-20",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
+      "reason": "정상 활동 기록 [bf-20]"
     },
     {
       "alertId": "bf-21",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
+      "reason": "정상 활동 기록 [bf-21]"
     },
     {
       "alertId": "bf-22",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
+      "reason": "정상 활동 기록 [bf-22]"
     },
     {
       "alertId": "bf-23",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
+      "reason": "정상 활동 기록 [bf-23]"
     },
     {
       "alertId": "bf-24",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
+      "reason": "정상 활동 기록 [bf-24]"
     },
     {
       "alertId": "bf-25",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
+      "reason": "정상 활동 기록 [bf-25]"
     },
     {
       "alertId": "bf-26",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
+      "reason": "정상 활동 기록 [bf-26]"
     },
     {
       "alertId": "bf-27",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
+      "reason": "정상 활동 기록 [bf-27]"
     },
     {
       "alertId": "bf-28",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
+      "reason": "정상 활동 기록 [bf-28]"
     }
   ],
   "counts": {
-    "block": 10,
+    "block": 9,
     "alert": 9,
-    "record": 9
+    "record": 10
   }
 }
