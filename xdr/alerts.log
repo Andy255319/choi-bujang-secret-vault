@@ -1,17 +1,9 @@
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-01","action":"block","reason":"차단 규칙: 경보 wi-01 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T01:13:01.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-02","action":"block","reason":"차단 규칙: 경보 wi-02 기반 요청 인자 안 스크립트 태그 차단, 만료 시각: 2026-09-27T01:13:20.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-03","action":"block","reason":"차단 규칙: 경보 wi-03 기반 반복된 경로 거슬러 올라가기 차단, 만료 시각: 2026-09-27T01:16:04.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-04","action":"block","reason":"차단 규칙: 경보 wi-04 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T02:02:11.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-05","action":"block","reason":"차단 규칙: 경보 wi-05 기반 요청 인자 안 스크립트 태그 차단, 만료 시각: 2026-09-27T02:18:33.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-06","action":"block","reason":"차단 규칙: 경보 wi-06 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T03:07:08.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-07","action":"block","reason":"차단 규칙: 경보 wi-07 기반 반복된 경로 거슬러 올라가기 차단, 만료 시각: 2026-09-27T05:04:19.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-08","action":"block","reason":"차단 규칙: 경보 wi-08 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T06:26:02.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-09","action":"block","reason":"차단 규칙: 경보 wi-09 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T01:22:14.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-10","action":"alert","reason":"모니터링 알림: 경보 wi-10 기반 요청 인자 안 SQL 구문 의심"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-11","action":"alert","reason":"모니터링 알림: 경보 wi-11 기반 요청 인자 안 스크립트 태그 의심"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-12","action":"block","reason":"차단 규칙: 경보 wi-12 기반 반복된 경로 거슬러 올라가기 차단, 만료 시각: 2026-09-27T02:44:18.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-13","action":"alert","reason":"모니터링 알림: 경보 wi-13 기반 요청 인자 안 SQL 구문 의심"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-14","action":"alert","reason":"모니터링 알림: 경보 wi-14 기반 요청 인자 안 SQL 구문 의심"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-15","action":"alert","reason":"모니터링 알림: 경보 wi-15 기반 요청 인자 안 SQL 구문 의심"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-16","action":"block","reason":"차단 규칙: 경보 wi-16 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T06:09:50.000Z"}
-{"timestamp":"2026-10-08T02:16:20.998Z","alertId":"wi-17","action":"alert","reason":"모니터링 알림: 경보 wi-17 기반 요청 인자 안 SQL 구문 의심"}
+{"timestamp":"2026-10-08T02:21:15.928Z","alertId":"wi-09","action":"alert","reason":"모니터링 알림: 경보 wi-09 기반 요청 인자 안 SQL 구문 의심"}
+{"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-10","action":"alert","reason":"모니터링 알림: 경보 wi-10 기반 요청 인자 안 SQL 구문 의심"}
+{"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-11","action":"alert","reason":"모니터링 알림: 경보 wi-11 기반 요청 인자 안 스크립트 태그 의심"}
+{"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-12","action":"alert","reason":"모니터링 알림: 경보 wi-12 기반 반복된 경로 거슬러 올라가기 의심"}
+{"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-13","action":"alert","reason":"모니터링 알림: 경보 wi-13 기반 요청 인자 안 SQL 구문 의심"}
+{"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-14","action":"alert","reason":"모니터링 알림: 경보 wi-14 기반 요청 인자 안 SQL 구문 의심"}
+{"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-15","action":"alert","reason":"모니터링 알림: 경보 wi-15 기반 요청 인자 안 SQL 구문 의심"}
+{"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-16","action":"alert","reason":"모니터링 알림: 경보 wi-16 기반 요청 인자 안 SQL 구문 의심"}
+{"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-17","action":"alert","reason":"모니터링 알림: 경보 wi-17 기반 요청 인자 안 SQL 구문 의심"}

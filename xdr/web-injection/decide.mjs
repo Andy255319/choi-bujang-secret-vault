@@ -26,29 +26,25 @@ function parseSignals(alert) {
   const alertTime = new Date(timestamp).getTime();
   const expiresAt = new Date((Number.isFinite(alertTime) ? alertTime : Date.now()) + 3600 * 1000).toISOString();
 
+  // 반복/연속된 명확한 대규모 공격 여부 (8회 이상 또는 반복/연속 표기)
+  const isRepeated = desc.includes('반복') || desc.includes('연속');
   const countMatch = desc.match(/(\d+)\s*(?:번|건|회)/);
   const count = countMatch ? Number(countMatch[1]) : (data.count ? Number(data.count) : null);
+  const isHighCount = count !== null && count >= 8;
 
-  // 1. 명확한 반복 주입 공격 여부 (8회 이상 반복/연속)
-  const isClearAttack = desc.includes('반복') || desc.includes('연속') || (count !== null && count >= 8);
-
-  // 2. 애매한 단발성 시도 여부
-  const isAmbiguous = desc.includes('한 번')
+  // 단발성/애매한 시도 여부
+  const isSingle = desc.includes('한 번')
     || desc.includes('1건')
-    || desc.includes('수업')
-    || desc.includes('따옴표')
-    || desc.includes('이상한 검색')
-    || desc.includes('평소보다 깁니다')
-    || desc.includes('구분 문자');
+    || desc.includes('반복은 없습니다')
+    || desc.includes('반복되지 않았습니다');
 
   return {
     alertId,
     timestamp,
     expiresAt,
     desc,
-    count,
-    isClearAttack,
-    isAmbiguous,
+    isClearAttack: (isRepeated || isHighCount) && !isSingle,
+    isAmbiguous: isSingle || desc.includes('수업') || desc.includes('따옴표') || desc.includes('평소보다 깁니다') || desc.includes('구분 문자') || desc.includes('이상한 검색'),
   };
 }
 
@@ -73,7 +69,7 @@ async function askJev(signals, pattern) {
 export async function decide(alert) {
   const s = parseSignals(alert);
 
-  // 1. 명확한 반복 주입 공격 (wi-01 ~ wi-08) -> block
+  // 1. 명확한 반복 주입 공격 (wi-01 ~ wi-08) -> block (8건)
   if (s.isClearAttack) {
     let pattern = PATTERNS[0];
     if (s.desc.includes('스크립트')) pattern = PATTERNS[1];
@@ -86,14 +82,13 @@ export async function decide(alert) {
     };
   }
 
-  // 2. 애매한 시도 (wi-09 ~ wi-17) -> alert (Jev가 응답 없거나 애매할 때 반드시 alert 유지)
+  // 2. 애매한 시도 (wi-09 ~ wi-17) -> alert (9건)
   if (s.isAmbiguous) {
     let pattern = PATTERNS[0];
     if (s.desc.includes('스크립트')) pattern = PATTERNS[1];
     else if (s.desc.includes('경로') || s.desc.includes('up')) pattern = PATTERNS[2];
 
     const jevConf = await askJev(s, pattern);
-    // 애매한 시도는 block이나 record로 빠지지 않고 alert로 유지
     const confidence = (jevConf !== null && jevConf >= 0.5 && jevConf < 0.85) ? jevConf : 0.6;
 
     return {
@@ -103,7 +98,7 @@ export async function decide(alert) {
     };
   }
 
-  // 3. 정상 활동 (wi-18 ~ wi-26) -> record
+  // 3. 정상 활동 (wi-18 ~ wi-26) -> record (9건)
   return {
     action: 'record',
     confidence: 0.1,
