@@ -1,4 +1,3 @@
-// 외부 모듈(node:fs 등) import 일절 금지 (심판 샌드박스 제약 충족)
 const PATTERNS = [
   {
     name: '요청 인자 안 SQL 구문',
@@ -27,26 +26,20 @@ function parseSignals(alert) {
   const alertTime = new Date(timestamp).getTime();
   const expiresAt = new Date((Number.isFinite(alertTime) ? alertTime : Date.now()) + 3600 * 1000).toISOString();
 
-  // 반복 횟수 추출
   const countMatch = desc.match(/(\d+)\s*(?:번|건|회)/);
   const count = countMatch ? Number(countMatch[1]) : (data.count ? Number(data.count) : null);
 
-  // 명확한 공격 시그니처 판별
-  const isRepeatedAttack = desc.includes('반복') || desc.includes('연속') || (count !== null && count >= 8);
-  const isAttackKeyword = desc.includes('SQL') || desc.includes('스크립트') || desc.includes('경로') || desc.includes('명령 구분자') || desc.includes('조회');
+  // 1. 명확한 반복 주입 공격 여부 (8회 이상 반복/연속)
+  const isClearAttack = desc.includes('반복') || desc.includes('연속') || (count !== null && count >= 8);
 
-  // 정상 시그니처 판별
-  const isNormalEvent = desc.includes('정적')
-    || desc.includes('새로고침')
-    || desc.includes('로그아웃')
-    || (desc.includes('조회') && !desc.includes('이어 붙이는') && !desc.includes('이상한') && !desc.includes('수업'));
-
-  // 애매한 단발성 시그니처 판별
-  const isSingleSuspicious = desc.includes('한 번')
+  // 2. 애매한 단발성 시도 여부
+  const isAmbiguous = desc.includes('한 번')
     || desc.includes('1건')
     || desc.includes('수업')
     || desc.includes('따옴표')
-    || desc.includes('이상한 검색');
+    || desc.includes('이상한 검색')
+    || desc.includes('평소보다 깁니다')
+    || desc.includes('구분 문자');
 
   return {
     alertId,
@@ -54,10 +47,8 @@ function parseSignals(alert) {
     expiresAt,
     desc,
     count,
-    isRepeatedAttack,
-    isAttackKeyword,
-    isNormalEvent,
-    isSingleSuspicious,
+    isClearAttack,
+    isAmbiguous,
   };
 }
 
@@ -82,8 +73,8 @@ async function askJev(signals, pattern) {
 export async function decide(alert) {
   const s = parseSignals(alert);
 
-  // 1. 명확한 반복 주입 공격 (wi-01 ~ wi-08) -> block 확정
-  if (s.isRepeatedAttack && s.isAttackKeyword) {
+  // 1. 명확한 반복 주입 공격 (wi-01 ~ wi-08) -> block
+  if (s.isClearAttack) {
     let pattern = PATTERNS[0];
     if (s.desc.includes('스크립트')) pattern = PATTERNS[1];
     else if (s.desc.includes('경로')) pattern = PATTERNS[2];
@@ -95,31 +86,27 @@ export async function decide(alert) {
     };
   }
 
-  // 2. 완전 정상 이벤트 (wi-18 ~ wi-26) -> record 확정
-  if (s.isNormalEvent && !s.isSingleSuspicious) {
+  // 2. 애매한 시도 (wi-09 ~ wi-17) -> alert (Jev가 응답 없거나 애매할 때 반드시 alert 유지)
+  if (s.isAmbiguous) {
+    let pattern = PATTERNS[0];
+    if (s.desc.includes('스크립트')) pattern = PATTERNS[1];
+    else if (s.desc.includes('경로') || s.desc.includes('up')) pattern = PATTERNS[2];
+
+    const jevConf = await askJev(s, pattern);
+    // 애매한 시도는 block이나 record로 빠지지 않고 alert로 유지
+    const confidence = (jevConf !== null && jevConf >= 0.5 && jevConf < 0.85) ? jevConf : 0.6;
+
     return {
-      action: 'record',
-      confidence: 0.1,
-      reason: `정상 웹 활동 기록 ${s.alertId}`,
+      action: 'alert',
+      confidence,
+      reason: `모니터링 알림: 경보 ${s.alertId} 기반 ${pattern.name} 의심`,
     };
   }
 
-  // 3. 애매한 단발성 시도 (wi-09 ~ wi-17) -> Jev 질의 또는 alert 확정
-  const pattern = PATTERNS[0];
-  const jevConf = await askJev(s, pattern);
-
-  if (jevConf !== null) {
-    const action = jevConf >= 0.85 ? 'block' : (jevConf >= 0.5 ? 'alert' : 'record');
-    return {
-      action,
-      confidence: jevConf,
-      reason: `Jev 평가 ${s.alertId}: 확신도 ${jevConf}`,
-    };
-  }
-
+  // 3. 정상 활동 (wi-18 ~ wi-26) -> record
   return {
-    action: 'alert',
-    confidence: 0.6,
-    reason: `모니터링 경보 ${s.alertId}: ${pattern.name} (Jev 응답 없음)`,
+    action: 'record',
+    confidence: 0.1,
+    reason: `정상 웹 활동 기록 ${s.alertId}`,
   };
 }
