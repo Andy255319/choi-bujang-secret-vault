@@ -6,162 +6,162 @@
       "alertId": "wi-01",
       "action": "block",
       "confidence": 0.95,
-      "reason": "요청 인자 내 SQL 구문"
+      "reason": "차단 규칙: 경보 wi-01 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T01:13:01.000Z"
     },
     {
       "alertId": "wi-02",
       "action": "block",
       "confidence": 0.95,
-      "reason": "요청 인자 내 스크립트 태그"
+      "reason": "차단 규칙: 경보 wi-02 기반 요청 인자 안 스크립트 태그 차단, 만료 시각: 2026-09-27T01:13:20.000Z"
     },
     {
       "alertId": "wi-03",
       "action": "block",
       "confidence": 0.95,
-      "reason": "반복된 경로 거슬러 올라가기"
+      "reason": "차단 규칙: 경보 wi-03 기반 반복된 경로 거슬러 올라가기 차단, 만료 시각: 2026-09-27T01:16:04.000Z"
     },
     {
       "alertId": "wi-04",
       "action": "block",
       "confidence": 0.95,
-      "reason": "요청 인자 내 SQL 구문"
+      "reason": "차단 규칙: 경보 wi-04 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T02:02:11.000Z"
     },
     {
       "alertId": "wi-05",
       "action": "block",
       "confidence": 0.95,
-      "reason": "요청 인자 내 SQL 구문, 요청 인자 내 스크립트 태그"
+      "reason": "차단 규칙: 경보 wi-05 기반 요청 인자 안 스크립트 태그 차단, 만료 시각: 2026-09-27T02:18:33.000Z"
     },
     {
       "alertId": "wi-06",
-      "action": "alert",
-      "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "차단 규칙: 경보 wi-06 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T03:07:08.000Z"
     },
     {
       "alertId": "wi-07",
       "action": "block",
       "confidence": 0.95,
-      "reason": "반복된 경로 거슬러 올라가기"
+      "reason": "차단 규칙: 경보 wi-07 기반 반복된 경로 거슬러 올라가기 차단, 만료 시각: 2026-09-27T05:04:19.000Z"
     },
     {
       "alertId": "wi-08",
       "action": "block",
       "confidence": 0.95,
-      "reason": "요청 인자 내 SQL 구문"
+      "reason": "차단 규칙: 경보 wi-08 기반 요청 인자 안 SQL 구문 차단, 만료 시각: 2026-09-27T06:26:02.000Z"
     },
     {
       "alertId": "wi-09",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "reason": "모니터링 경보 wi-09: 요청 인자 안 SQL 구문 (Jev 응답 없음)"
     },
     {
       "alertId": "wi-10",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "reason": "모니터링 경보 wi-10: 요청 인자 안 SQL 구문 (Jev 응답 없음)"
     },
     {
       "alertId": "wi-11",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "reason": "모니터링 경보 wi-11: 요청 인자 안 SQL 구문 (Jev 응답 없음)"
     },
     {
       "alertId": "wi-12",
-      "action": "alert",
-      "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "차단 규칙: 경보 wi-12 기반 반복된 경로 거슬러 올라가기 차단, 만료 시각: 2026-09-27T02:44:18.000Z"
     },
     {
       "alertId": "wi-13",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "reason": "모니터링 경보 wi-13: 요청 인자 안 SQL 구문 (Jev 응답 없음)"
     },
     {
       "alertId": "wi-14",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "reason": "모니터링 경보 wi-14: 요청 인자 안 SQL 구문 (Jev 응답 없음)"
     },
     {
       "alertId": "wi-15",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "reason": "모니터링 경보 wi-15: 요청 인자 안 SQL 구문 (Jev 응답 없음)"
     },
     {
       "alertId": "wi-16",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "reason": "모니터링 경보 wi-16: 요청 인자 안 SQL 구문 (Jev 응답 없음)"
     },
     {
       "alertId": "wi-17",
       "action": "alert",
       "confidence": 0.6,
-      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+      "reason": "모니터링 경보 wi-17: 요청 인자 안 SQL 구문 (Jev 응답 없음)"
     },
     {
       "alertId": "wi-18",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+      "reason": "정상 웹 활동 기록 wi-18"
     },
     {
       "alertId": "wi-19",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+      "reason": "정상 웹 활동 기록 wi-19"
     },
     {
       "alertId": "wi-20",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+      "reason": "정상 웹 활동 기록 wi-20"
     },
     {
       "alertId": "wi-21",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+      "reason": "정상 웹 활동 기록 wi-21"
     },
     {
       "alertId": "wi-22",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+      "reason": "정상 웹 활동 기록 wi-22"
     },
     {
       "alertId": "wi-23",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+      "reason": "정상 웹 활동 기록 wi-23"
     },
     {
       "alertId": "wi-24",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+      "reason": "정상 웹 활동 기록 wi-24"
     },
     {
       "alertId": "wi-25",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+      "reason": "정상 웹 활동 기록 wi-25"
     },
     {
       "alertId": "wi-26",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+      "reason": "정상 웹 활동 기록 wi-26"
     }
   ],
   "counts": {
-    "block": 7,
-    "alert": 10,
+    "block": 9,
+    "alert": 8,
     "record": 9
   }
 }
