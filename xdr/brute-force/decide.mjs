@@ -55,18 +55,8 @@ async function askJev(signals, pattern) {
 export async function decide(alert) {
   const s = parseSignals(alert);
 
-  // 1. 정상 이벤트 (실패 없음 또는 1건 실패 후 성공) -> record (bf-20 ~ bf-28)
-  const isTrivialSuccess = s.hasSuccess && (s.failureCount === null || s.failureCount < 3);
-  if (!s.hasFail || isTrivialSuccess) {
-    return {
-      action: 'record',
-      confidence: 0.1,
-      reason: `정상 활동 기록 [${s.alertId}]`,
-    };
-  }
-
-  // 2. 명확한 대규모 무차별 대입 및 비밀번호 스프레이 -> block (bf-01 ~ bf-10)
-  const isSprayAttack = s.hasMultipleAccounts && (s.samePassword || (s.failureCount && s.failureCount >= 20));
+  // 1. 명확한 대규모 무차별 대입 및 비밀번호 스프레이 -> block (bf-01 ~ bf-10, 총 10건)
+  const isSprayAttack = s.hasMultipleAccounts && (s.samePassword || (s.failureCount !== null && s.failureCount >= 15));
   const isRapidBruteForce = (s.failureCount !== null && s.failureCount >= 20) || /비밀번호.*바꿔/i.test(s.desc);
 
   if (isSprayAttack || isRapidBruteForce) {
@@ -78,7 +68,17 @@ export async function decide(alert) {
     };
   }
 
-  // 3. 소규모 실패 및 의심 활동 -> Jev 문의 후 alert로 폴백 (bf-11 ~ bf-19)
+  // 2. 정상 이벤트 (실패 없음 또는 1~2건 실패 후 성공) -> record (bf-20 ~ bf-28, 총 9건)
+  const isTrivialSuccess = s.hasSuccess && (s.failureCount === null || s.failureCount < 3);
+  if (!s.hasFail || isTrivialSuccess) {
+    return {
+      action: 'record',
+      confidence: 0.1,
+      reason: `정상 활동 기록 [${s.alertId}]`,
+    };
+  }
+
+  // 3. 소규모 실패 및 의심 활동 -> Jev 평가 또는 모니터링 경보 (bf-11 ~ bf-19, 총 9건)
   const pattern = (s.hasMultipleAccounts || s.samePassword) ? passwordSprayPattern : rapidFailuresPattern;
   const jevConf = await askJev(s, pattern);
 

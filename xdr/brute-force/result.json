@@ -10,9 +10,9 @@
     },
     {
       "alertId": "bf-02",
-      "action": "record",
-      "confidence": 0.1,
-      "reason": "정상 활동 기록 [bf-02]"
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "차단 규칙: 경보 [bf-02] 기반 여러 계정에 같은 비밀번호 대입 차단 (만료: 2026-09-27T01:12:40.000Z)"
     },
     {
       "alertId": "bf-03",
@@ -172,8 +172,8 @@
     }
   ],
   "counts": {
-    "block": 9,
+    "block": 10,
     "alert": 9,
-    "record": 10
+    "record": 9
   }
 }
