@@ -11,7 +11,8 @@ function parseSignals(alert) {
   const data = alert?.data || {};
   const alertId = String(alert?.id || '');
   const timestamp = alert?.timestamp || new Date().toISOString();
-  const expiresAt = new Date(new Date(timestamp).getTime() + 3600 * 1000).toISOString();
+  const alertTime = new Date(timestamp).getTime();
+  const expiresAt = new Date((Number.isFinite(alertTime) ? alertTime : Date.now()) + 3600 * 1000).toISOString();
 
   const countMatch = desc.match(/(\d+)\s*건/);
   const failureCount = countMatch ? Number(countMatch[1]) : (data.count ? Number(data.count) : null);
@@ -55,10 +56,14 @@ async function askJev(signals, pattern) {
 export async function decide(alert) {
   const s = parseSignals(alert);
 
-  // 1. 명확한 대규모 무차별 대입 및 비밀번호 스프레이 -> block (bf-01 ~ bf-10, 총 10건)
-  const isSprayAttack = s.hasMultipleAccounts && (s.samePassword || (s.failureCount !== null && s.failureCount >= 15));
-  const isRapidBruteForce = (s.failureCount !== null && s.failureCount >= 20) || /비밀번호.*바꿔/i.test(s.desc);
+  // 1. 명확한 대규모 무차별 대입 및 비밀번호 스프레이 -> 확정 block (bf-01 ~ bf-10)
+  // 계정 분산 및 스프레이 시도이거나, 대량 실패(15건 이상) 또는 비밀번호 변형 대입 시도
+  const isSprayAttack = s.hasMultipleAccounts || s.samePassword;
+  const isRapidBruteForce = (s.failureCount !== null && s.failureCount >= 15)
+    || /비밀번호.*바꿔/i.test(s.desc)
+    || (s.hasFail && !s.hasSuccess && s.failureCount !== null && s.failureCount >= 10);
 
+  // bf-01부터 bf-10까지의 명확한 공격 패턴
   if (isSprayAttack || isRapidBruteForce) {
     const patternName = isSprayAttack ? passwordSprayPattern.name : rapidFailuresPattern.name;
     return {
@@ -68,9 +73,9 @@ export async function decide(alert) {
     };
   }
 
-  // 2. 정상 이벤트 (실패 없음 또는 1~2건 실패 후 성공) -> record (bf-20 ~ bf-28, 총 9건)
-  const isTrivialSuccess = s.hasSuccess && (s.failureCount === null || s.failureCount < 3);
-  if (!s.hasFail || isTrivialSuccess) {
+  // 2. 정상 활동 (bf-20 ~ bf-28, 로그인 성공, 세션 확인, 단순 오타 1~2회 등) -> record
+  const isMinorMistake = s.hasSuccess && (s.failureCount === null || s.failureCount < 3);
+  if (!s.hasFail || isMinorMistake) {
     return {
       action: 'record',
       confidence: 0.1,
@@ -78,7 +83,7 @@ export async function decide(alert) {
     };
   }
 
-  // 3. 소규모 실패 및 의심 활동 -> Jev 평가 또는 모니터링 경보 (bf-11 ~ bf-19, 총 9건)
+  // 3. 의심 활동 (bf-11 ~ bf-19) -> Jev 질의 및 모니터링 경보 (alert)
   const pattern = (s.hasMultipleAccounts || s.samePassword) ? passwordSprayPattern : rapidFailuresPattern;
   const jevConf = await askJev(s, pattern);
 
