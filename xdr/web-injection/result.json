@@ -1,0 +1,167 @@
+{
+  "schema": "aleph.xdr.result.v1",
+  "moduleKey": "web-injection",
+  "decisions": [
+    {
+      "alertId": "wi-01",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "요청 인자 내 SQL 구문"
+    },
+    {
+      "alertId": "wi-02",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "요청 인자 내 스크립트 태그"
+    },
+    {
+      "alertId": "wi-03",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "반복된 경로 거슬러 올라가기"
+    },
+    {
+      "alertId": "wi-04",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "요청 인자 내 SQL 구문"
+    },
+    {
+      "alertId": "wi-05",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "요청 인자 내 SQL 구문, 요청 인자 내 스크립트 태그"
+    },
+    {
+      "alertId": "wi-06",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-07",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "반복된 경로 거슬러 올라가기"
+    },
+    {
+      "alertId": "wi-08",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "요청 인자 내 SQL 구문"
+    },
+    {
+      "alertId": "wi-09",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-10",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-11",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-12",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-13",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-14",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-15",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-16",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-17",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "미확정 (제공 패턴과 일치하는 신호 없음)"
+    },
+    {
+      "alertId": "wi-18",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+    },
+    {
+      "alertId": "wi-19",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+    },
+    {
+      "alertId": "wi-20",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+    },
+    {
+      "alertId": "wi-21",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+    },
+    {
+      "alertId": "wi-22",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+    },
+    {
+      "alertId": "wi-23",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+    },
+    {
+      "alertId": "wi-24",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+    },
+    {
+      "alertId": "wi-25",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+    },
+    {
+      "alertId": "wi-26",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "일치하는 근거 패턴 없음 — 정상 이벤트로 기록"
+    }
+  ],
+  "counts": {
+    "block": 7,
+    "alert": 10,
+    "record": 9
+  }
+}
