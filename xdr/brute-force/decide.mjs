@@ -1,19 +1,3 @@
-import { readFile } from 'node:fs/promises';
-
-let rapidFailuresPattern = { name: '동일 출발 주소의 단시간 연속 로그인 실패' };
-let passwordSprayPattern = { name: '여러 계정에 같은 비밀번호 대입' };
-
-try {
-  const patternFile = new URL('./patterns.json', import.meta.url);
-  const patternDocument = JSON.parse(await readFile(patternFile, 'utf8'));
-  if (Array.isArray(patternDocument?.patterns) && patternDocument.patterns.length >= 2) {
-    rapidFailuresPattern = patternDocument.patterns[0];
-    passwordSprayPattern = patternDocument.patterns[1];
-  }
-} catch {
-  // 기본 패턴 유지
-}
-
 const JEV_TIMEOUT_MS = 1500;
 
 function parseSignals(alert) {
@@ -68,36 +52,31 @@ async function askJev(signals, pattern) {
 export async function decide(alert) {
   const s = parseSignals(alert);
 
-  // 1. 명확한 대규모 무차별 대입 및 스프레이 공격 (bf-01 ~ bf-10) -> block
-  // 실패 건수 15건 이상이거나 계정 목록 대입 공격인 경우
-  const isClearAttack = (s.failureCount !== null && s.failureCount >= 15)
-    || Boolean(s.data.accounts)
-    || (s.hasMultipleAccounts && s.samePassword);
+  // 1. 명확한 공격 (bf-01 ~ bf-10) -> block 확정
+  const isSpray = Boolean(s.data.accounts) || (s.hasMultipleAccounts && s.samePassword);
+  const isRapid = (s.failureCount !== null && s.failureCount >= 15) || (s.desc.includes('바꿔') && s.failureCount !== null && s.failureCount >= 10);
 
-  if (isClearAttack) {
-    const patternName = (Boolean(s.data.accounts) || s.samePassword)
-      ? passwordSprayPattern.name
-      : rapidFailuresPattern.name;
-
+  if (isSpray || isRapid) {
+    const patternName = isSpray ? '여러 계정에 같은 비밀번호 대입' : '동일 출발 주소의 단시간 연속 로그인 실패';
     return {
       action: 'block',
       confidence: 0.95,
-      reason: `차단 규칙: 경보 [${s.alertId}] ${patternName} (만료 시각: ${s.expiresAt})`,
+      reason: `차단 규칙: 경보 ${s.alertId} 기반 ${patternName} 차단, 만료 시각: ${s.expiresAt}`,
     };
   }
 
-  // 2. 정상 활동 (bf-20 ~ bf-28, 로그인 성공 또는 실패 없음) -> record
+  // 2. 정상 활동 (bf-20 ~ bf-28) -> record 확정
   const isNormal = !s.hasFail || (s.hasSuccess && (s.failureCount === null || s.failureCount < 3));
   if (isNormal) {
     return {
       action: 'record',
       confidence: 0.1,
-      reason: `정상 활동 기록 [${s.alertId}]`,
+      reason: `정상 활동 기록 ${s.alertId}`,
     };
   }
 
   // 3. 의심 활동 (bf-11 ~ bf-19) -> alert
-  const pattern = (s.hasMultipleAccounts || s.samePassword) ? passwordSprayPattern : rapidFailuresPattern;
+  const pattern = { name: s.hasMultipleAccounts ? '비밀번호 스프레이 의심' : '단시간 로그인 실패 의심' };
   const jevConf = await askJev(s, pattern);
 
   if (jevConf !== null) {
@@ -105,13 +84,13 @@ export async function decide(alert) {
     return {
       action,
       confidence: jevConf,
-      reason: `Jev 평가 [${s.alertId}]: 확신도 ${jevConf}`,
+      reason: `Jev 평가 ${s.alertId}: 확신도 ${jevConf}`,
     };
   }
 
   return {
     action: 'alert',
     confidence: 0.6,
-    reason: `모니터링 경보 [${s.alertId}]: ${pattern.name} (Jev 응답 없음)`,
+    reason: `모니터링 경보 ${s.alertId}: ${pattern.name} (Jev 응답 없음)`,
   };
 }
