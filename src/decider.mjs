@@ -1,14 +1,53 @@
-// ALEPH SDP 엔진이 확인한 요청만 받는 학생 판정기 시작점입니다.
-// 6단계부터 규칙을 하나씩 추가합니다. 이 기본 응답은 모든 요청을 거부합니다.
-// 요청 본문의 userId, role, 기기 키, 토큰을 별도로 믿거나 저장하지 마세요.
-export const RULE_IDS = Object.freeze(['starter.deny']);
+export const RULE_IDS = Object.freeze([
+  'device_registered',
+  'step_up_required',
+]);
 
 export async function decide(request) {
-  return {
+  const base = {
     schema: 'aleph.decision.v1',
     requestId: request.requestId,
-    decision: 'deny',
-    reasonCode: 'starter_not_ready',
-    ruleIds: [RULE_IDS[0]],
+  };
+
+  // 1. 미등록 기기 차단
+  if (request.deviceRegistered === false) {
+    return {
+      ...base,
+      decision: 'deny',
+      reasonCode: 'device_not_registered',
+      ruleIds: ['device_registered'],
+    };
+  }
+
+  // 2. 무차별 공격 및 이상 징후 탐지
+  const hasRiskEvents = Array.isArray(request.recentEvents) && request.recentEvents.some(
+    e => e.kind === 'risk_signal' || (e.count && e.count >= 5) || e.kind?.includes('fail')
+  );
+  const isSuspiciousSignal = request.signals?.network === 'unusual' || request.signals?.region === 'foreign';
+
+  if (hasRiskEvents || isSuspiciousSignal) {
+    if (request.stepUp?.verified === true) {
+      return {
+        ...base,
+        decision: 'allow',
+        reasonCode: 'approved',
+        ruleIds: ['step_up_required'],
+      };
+    }
+
+    return {
+      ...base,
+      decision: 'step_up',
+      reasonCode: 'step_up_required',
+      ruleIds: ['step_up_required'],
+    };
+  }
+
+  // 3. 정상 요청 허용
+  return {
+    ...base,
+    decision: 'allow',
+    reasonCode: 'approved',
+    ruleIds: ['device_registered'],
   };
 }
