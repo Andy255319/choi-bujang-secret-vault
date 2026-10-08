@@ -5,170 +5,170 @@
     {
       "alertId": "bf-01",
       "action": "block",
-      "confidence": 0.96,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "confidence": 0.95,
+      "reason": "근거 경보 [bf-01]: 동일 출발 주소의 단시간 연속 로그인 실패"
     },
     {
       "alertId": "bf-02",
       "action": "block",
       "confidence": 0.98,
-      "reason": "근거 패턴: 여러 계정에 같은 비밀번호 대입"
+      "reason": "근거 경보 [bf-02]: 여러 계정에 같은 비밀번호 대입"
     },
     {
       "alertId": "bf-03",
       "action": "block",
-      "confidence": 0.96,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "confidence": 0.95,
+      "reason": "근거 경보 [bf-03]: 동일 출발 주소의 단시간 연속 로그인 실패"
     },
     {
       "alertId": "bf-04",
       "action": "block",
-      "confidence": 0.96,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "confidence": 0.95,
+      "reason": "근거 경보 [bf-04]: 동일 출발 주소의 단시간 연속 로그인 실패"
     },
     {
       "alertId": "bf-05",
       "action": "block",
-      "confidence": 0.9,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (고수준 규칙·대량 실패)"
+      "confidence": 0.98,
+      "reason": "근거 경보 [bf-05]: 여러 계정에 같은 비밀번호 대입"
     },
     {
       "alertId": "bf-06",
       "action": "block",
-      "confidence": 0.96,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패"
+      "confidence": 0.95,
+      "reason": "근거 경보 [bf-06]: 동일 출발 주소의 단시간 연속 로그인 실패"
     },
     {
       "alertId": "bf-07",
       "action": "block",
-      "confidence": 0.9,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (고수준 규칙·대량 실패)"
+      "confidence": 0.95,
+      "reason": "근거 경보 [bf-07]: 동일 출발 주소의 단시간 연속 로그인 실패"
     },
     {
       "alertId": "bf-08",
       "action": "block",
-      "confidence": 0.9,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (고수준 규칙·대량 실패)"
+      "confidence": 0.95,
+      "reason": "근거 경보 [bf-08]: 동일 출발 주소의 단시간 연속 로그인 실패"
     },
     {
       "alertId": "bf-09",
       "action": "block",
       "confidence": 0.98,
-      "reason": "근거 패턴: 여러 계정에 같은 비밀번호 대입"
+      "reason": "근거 경보 [bf-09]: 여러 계정에 같은 비밀번호 대입"
     },
     {
       "alertId": "bf-10",
       "action": "block",
-      "confidence": 0.9,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (고수준 규칙·대량 실패)"
+      "confidence": 0.95,
+      "reason": "근거 경보 [bf-10]: 동일 출발 주소의 단시간 연속 로그인 실패"
     },
     {
       "alertId": "bf-11",
       "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "confidence": 0.6,
+      "reason": "근거 경보 [bf-11]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
     },
     {
       "alertId": "bf-12",
       "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "confidence": 0.6,
+      "reason": "근거 경보 [bf-12]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
     },
     {
       "alertId": "bf-13",
       "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "confidence": 0.6,
+      "reason": "근거 경보 [bf-13]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
     },
     {
       "alertId": "bf-14",
       "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "confidence": 0.6,
+      "reason": "근거 경보 [bf-14]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
     },
     {
       "alertId": "bf-15",
       "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "confidence": 0.6,
+      "reason": "근거 경보 [bf-15]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
     },
     {
       "alertId": "bf-16",
       "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "confidence": 0.6,
+      "reason": "근거 경보 [bf-16]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
     },
     {
       "alertId": "bf-17",
       "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "confidence": 0.6,
+      "reason": "근거 경보 [bf-17]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
     },
     {
       "alertId": "bf-18",
       "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "confidence": 0.6,
+      "reason": "근거 경보 [bf-18]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
     },
     {
       "alertId": "bf-19",
       "action": "alert",
-      "confidence": 0.5,
-      "reason": "근거 패턴: 동일 출발 주소의 단시간 연속 로그인 실패 (Jev 응답 없음 또는 시간 초과)"
+      "confidence": 0.6,
+      "reason": "근거 경보 [bf-19]: 동일 출발 주소의 단시간 연속 로그인 실패 (모니터링 경보)"
     },
     {
       "alertId": "bf-20",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (참고: 동일 출발 주소의 단시간 연속 로그인 실패; 여러 계정에 같은 비밀번호 대입)"
+      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
     },
     {
       "alertId": "bf-21",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (참고: 동일 출발 주소의 단시간 연속 로그인 실패; 여러 계정에 같은 비밀번호 대입)"
+      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
     },
     {
       "alertId": "bf-22",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (참고: 동일 출발 주소의 단시간 연속 로그인 실패; 여러 계정에 같은 비밀번호 대입)"
+      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
     },
     {
       "alertId": "bf-23",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (참고: 동일 출발 주소의 단시간 연속 로그인 실패; 여러 계정에 같은 비밀번호 대입)"
+      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
     },
     {
       "alertId": "bf-24",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (참고: 동일 출발 주소의 단시간 연속 로그인 실패; 여러 계정에 같은 비밀번호 대입)"
+      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
     },
     {
       "alertId": "bf-25",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (참고: 동일 출발 주소의 단시간 연속 로그인 실패; 여러 계정에 같은 비밀번호 대입)"
+      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
     },
     {
       "alertId": "bf-26",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (참고: 동일 출발 주소의 단시간 연속 로그인 실패; 여러 계정에 같은 비밀번호 대입)"
+      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
     },
     {
       "alertId": "bf-27",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (참고: 동일 출발 주소의 단시간 연속 로그인 실패; 여러 계정에 같은 비밀번호 대입)"
+      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
     },
     {
       "alertId": "bf-28",
       "action": "record",
       "confidence": 0.1,
-      "reason": "일치 패턴 없음 (참고: 동일 출발 주소의 단시간 연속 로그인 실패; 여러 계정에 같은 비밀번호 대입)"
+      "reason": "일치 패턴 없음 (단순 활동/사소한 실패)"
     }
   ],
   "counts": {

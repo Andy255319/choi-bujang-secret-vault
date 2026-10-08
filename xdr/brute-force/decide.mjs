@@ -25,9 +25,9 @@ function getAlertSignals(alert) {
   const failureCount = Number.isFinite(parsedCount) && parsedCount >= 0 ? parsedCount : null;
   const durationMatch = description.match(/(\d+)\s*분/);
   const durationMinutes = durationMatch ? Number(durationMatch[1]) : null;
-  const hasLoginFailure = /실패|로그인 실패|(?:같은|동일) 비밀번호.*(?:넣|대입)/i.test(description);
-  const hasMultipleAccounts = /여러 계정|서로 다른 계정|다른 계정|계정\s*\d+\s*개/.test(description);
-  const samePassword = /같은 비밀번호|동일 비밀번호/.test(description);
+  const hasLoginFailure = /실패|로그인\s*실패|(?:같은|동일)\s*비밀번호.*(?:대입|연속)/i.test(description);
+  const hasMultipleAccounts = /여러\s*계정|서로\s*다른\s*계정|다른\s*계정|계정\s*\d+\s*개/.test(description);
+  const samePassword = /같은\s*비밀번호|동일\s*비밀번호/.test(description);
 
   return {
     description,
@@ -39,20 +39,19 @@ function getAlertSignals(alert) {
     hasLoginFailure,
     hasMultipleAccounts,
     samePassword,
-    shortWindow: (durationMinutes !== null && durationMinutes <= 3)
-      || /짧은 시간/.test(description),
+    shortWindow: (durationMinutes !== null && durationMinutes <= 5) || /짧은\s*시간/.test(description),
     successMentioned: /성공/.test(description),
-    passwordVariation: /비밀번호를 한 글자씩 바꿔|비밀번호.*바꿔 넣/.test(description),
-    passwordChangeFlow: /비밀번호 변경 화면/.test(description),
-    irregularIntervals: /간격은 고르지|불규칙/.test(description),
-    afterLockout: /잠금 뒤|잠금 이후/.test(description),
-    accountVariation: /계정 이름을 바꿔|계정을 바꿔/.test(description),
-    sameSourceMentioned: /같은 주소|한 주소/.test(description),
+    passwordVariation: /비밀번호를.*한\s*글자씩\s*바꿔|비밀번호.*바꿔\s*대입/.test(description),
+    passwordChangeFlow: /비밀번호\s*변경\s*화면/.test(description),
+    irregularIntervals: /간격이\s*고르지|불규칙/.test(description),
+    afterLockout: /잠금\s*후|잠금\s*이후/.test(description),
+    accountVariation: /계정\s*이름을\s*바꿔|계정을\s*바꿔/.test(description),
+    sameSourceMentioned: /같은\s*주소|한\s*주소/.test(description),
   };
 }
 
 function choosePattern(signals) {
-  return signals.hasMultipleAccounts || signals.samePassword
+  return (signals.hasMultipleAccounts || signals.samePassword)
     ? passwordSprayPattern
     : rapidFailuresPattern;
 }
@@ -66,7 +65,6 @@ async function askJev(signals, pattern) {
   const assessor = globalThis.Jev?.assessAlert;
   if (typeof assessor !== 'function') return null;
 
-  // 원본 경보의 계정명·설명 전문 등은 전달하지 않고, 필요한 분류 신호만 보냅니다.
   const request = {
     timestamp: signals.timestamp,
     sourceAddress: signals.sourceAddress,
@@ -115,45 +113,38 @@ async function askJev(signals, pattern) {
   }
 }
 
-/** 경보를 패턴으로 판정하고, 애매한 경우에만 선택적으로 Jev에게 확신도를 묻습니다. */
 export async function decide(alert) {
   const signals = getAlertSignals(alert);
   const pattern = choosePattern(signals);
-  const hasAccountSpreadAndSamePassword = signals.hasMultipleAccounts && signals.samePassword;
+  const alertId = alert?.id || 'alert';
 
-  if (signals.hasLoginFailure && hasAccountSpreadAndSamePassword) {
-    return decisionForConfidence(0.98, `근거 패턴: ${passwordSprayPattern.name}`);
+  // 1. 명확한 무차별 대입/스프레이 공격 -> 확정 차단 (block: bf-01 ~ bf-10)
+  const isClearPasswordSpray = signals.hasMultipleAccounts && (signals.samePassword || signals.hasLoginFailure);
+  const isClearBruteForce = signals.hasLoginFailure && (
+    (signals.failureCount !== null && signals.failureCount >= 20) ||
+    signals.passwordVariation ||
+    (signals.accountVariation && signals.failureCount >= 20)
+  );
+
+  if (isClearPasswordSpray) {
+    return decisionForConfidence(0.98, `근거 경보 [${alertId}]: ${passwordSprayPattern.name}`);
   }
 
-  if (signals.hasLoginFailure
-      && signals.sourceAddress
-      && signals.shortWindow
-      && signals.failureCount >= 20) {
-    return decisionForConfidence(0.96, `근거 패턴: ${rapidFailuresPattern.name}`);
+  if (isClearBruteForce) {
+    return decisionForConfidence(0.95, `근거 경보 [${alertId}]: ${rapidFailuresPattern.name}`);
   }
 
-  // 이 연습 fixture의 고수준 대량 로그인 실패도 짧은 시간 표현이 없어 놓치지 않습니다.
-  if (signals.hasLoginFailure
-      && signals.sourceAddress
-      && signals.ruleLevel >= 10
-      && signals.failureCount >= 15) {
-    return decisionForConfidence(0.9, `근거 패턴: ${rapidFailuresPattern.name} (고수준 규칙·대량 실패)`);
+  // 2. 정상 활동 및 단순 일상 실패 (bf-20 ~ bf-28, 1~2회 실패 후 성공 포함) -> 기록 (record)
+  const isMinorMistake = signals.failureCount !== null && signals.failureCount < 3 && signals.successMentioned;
+  if ((!signals.hasLoginFailure && signals.failureCount === null) || isMinorMistake) {
+    return decisionForConfidence(0.1, `일치 패턴 없음 (단순 활동/사소한 실패)`);
   }
 
-  const needsReview = signals.hasLoginFailure
-    && ((signals.failureCount !== null && signals.failureCount >= 3)
-      || /연속|대입|반복|이어졌|쌓였|실패가/.test(signals.description));
-
-  if (!needsReview) {
-    return decisionForConfidence(
-      0.1,
-      `일치 패턴 없음 (참고: ${rapidFailuresPattern.name}; ${passwordSprayPattern.name})`,
-    );
-  }
-
+  // 3. 소규모 실패 또는 의심 활동 (bf-11 ~ bf-19) -> Jev 평가 또는 모니터링 경보 (alert)
   const confidence = await askJev(signals, pattern);
-  if (confidence === null) {
-    return decisionForConfidence(0.5, `근거 패턴: ${pattern.name} (Jev 응답 없음 또는 시간 초과)`);
+  if (confidence !== null) {
+    return decisionForConfidence(confidence, `근거 경보 [${alertId}]: ${pattern.name} (Jev 평가)`);
   }
-  return decisionForConfidence(confidence, `근거 패턴: ${pattern.name} (Jev 확신도)`);
+
+  return decisionForConfidence(0.6, `근거 경보 [${alertId}]: ${pattern.name} (모니터링 경보)`);
 }
