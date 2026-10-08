@@ -6,33 +6,29 @@ export const RULE_IDS = Object.freeze([
   'xdr_brute_force_block',
 ]);
 
-let blockListCache = null;
+// 차단된 공격자 IP 목록 캐시
+let blockedSourcesCache = null;
 
-async function loadBlockList() {
-  if (blockListCache) return blockListCache;
+async function getBlockedSources() {
+  if (blockedSourcesCache) return blockedSourcesCache;
   try {
     const fix = JSON.parse(await readFile(new URL('../xdr/fixtures/brute-force.json', import.meta.url), 'utf8'));
     const res = JSON.parse(await readFile(new URL('../xdr/brute-force/result.json', import.meta.url), 'utf8'));
     const fixMap = new Map(fix.alerts.map(a => [a.id, a]));
 
-    const list = [];
+    const blocked = new Set();
     for (const d of res.decisions) {
       if (d.action !== 'block') continue;
       const alert = fixMap.get(d.alertId);
-      const ts = alert?.timestamp || new Date().toISOString();
-      const expiresAt = new Date(new Date(ts).getTime() + 3600 * 1000).toISOString();
-      list.push({
-        alertId: d.alertId,
-        srcip: alert?.data?.srcip || alert?.sourceAddress,
-        expiresAt,
-        ruleId: `block_${d.alertId}_exp_${expiresAt.slice(0, 10).replace(/-/g, '')}`,
-      });
+      if (alert?.data?.srcip) blocked.add(alert.data.srcip);
+      if (alert?.sourceAddress) blocked.add(alert.sourceAddress);
+      if (d.alertId) blocked.add(d.alertId);
     }
-    blockListCache = list;
+    blockedSourcesCache = blocked;
   } catch {
-    blockListCache = [];
+    blockedSourcesCache = new Set();
   }
-  return blockListCache;
+  return blockedSourcesCache;
 }
 
 export async function decide(request) {
@@ -51,17 +47,13 @@ export async function decide(request) {
     };
   }
 
-  // 2. XDR 무차별 대입 공격 차단 규칙 적용 (근거 경보 번호 + 만료 시각 규칙 ID 반환)
-  const blockList = await loadBlockList();
-  const matched = blockList.find(b => {
-    if (request.signals?.source && request.signals.source === b.alertId) return true;
-    if (request.signals?.sourceAddress && b.srcip && request.signals.sourceAddress === b.srcip) return true;
-    if (request.signals?.source && b.srcip && request.signals.source === b.srcip) return true;
-    if (Array.isArray(request.recentEvents) && request.recentEvents.some(e => e.kind === b.alertId || e.source === b.alertId)) return true;
-    return false;
-  });
+  // 2. XDR 무차별 대입 공격 차단 규칙 적용 (출발 IP 및 경보 ID 차단)
+  const blockedSources = await getBlockedSources();
+  const src = request.signals?.sourceAddress || request.signals?.source;
+  const isBlockedSrc = src && blockedSources.has(src);
+  const isBlockedEvent = Array.isArray(request.recentEvents) && request.recentEvents.some(e => blockedSources.has(e.kind) || blockedSources.has(e.source));
 
-  if (matched) {
+  if (isBlockedSrc || isBlockedEvent) {
     return {
       ...base,
       decision: 'deny',
@@ -91,7 +83,7 @@ export async function decide(request) {
     };
   }
 
-  // 4. 정상 등록 요청 허용 (기존 규칙 보존)
+  // 4. 정상 기기 요청 허용 (기존 규칙 보존)
   return {
     ...base,
     decision: 'allow',
