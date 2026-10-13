@@ -58,6 +58,44 @@ export async function runAttackChecks(config) {
           ? '가상 확인 완료 표시로 후속 요청이 허용됨; 실제 재로그인 검증은 미실행'
           : `가상 후속 요청이 허용되지 않음 (decision: ${followUpResult.decision}, reasonCode: ${followUpResult.reasonCode}); 실제 재로그인 검증은 미실행`,
       });
+      if (config.step >= 8) {
+      // 타인 메모 접근 차단 점검
+      const otherUserReq = {
+        ...normal,
+        requestId: 'attack-check-other-zone',
+        path: '/notes/memo%3Aother-learner%3Anote-1',
+        route: 'GET /notes/:id',
+      };
+      const otherResult = await decide(otherUserReq);
+      const otherBlocked = otherResult.decision === 'deny';
+      checks.push({
+        attackId: 'other_zone_note_read',
+        expected: '다른 사용자의 메모 구역 접근 거부 (zone_access_denied)',
+        observed: otherBlocked
+          ? '다른 구역 메모 요청이 정상 거부됨'
+          : `다른 구역 요청이 허용됨 (decision: ${otherResult.decision})`,
+      });
+
+      // 학생의 공지 수정 차단 점검
+      const noticeModifyReq = {
+        ...normal,
+        requestId: 'attack-check-notice-modify',
+        method: 'PUT',
+        path: '/notes/instructor-announcement%3Anotice-1',
+        route: 'PUT /notes/:id',
+      };
+      const noticeResult = await decide(noticeModifyReq);
+      const noticeBlocked = noticeResult.decision === 'deny';
+      checks.push({
+        attackId: 'notice_zone_modify_denied',
+        expected: '학생의 공지 수정 시도 거부 (zone_access_denied)',
+        observed: noticeBlocked
+          ? '공지 수정 시도가 정상 거부됨'
+          : `공지 수정이 허용됨 (decision: ${noticeResult.decision})`,
+      });
+    }
+
+      
     }
     return checks;
   }

@@ -75,7 +75,7 @@ export async function decide(request) {
     requestId: request?.requestId,
   };
 
-  // 1. 미등록 기기 거부 (6단계 핵심)
+  // 1. 미등록 기기 거부 (6단계)
   if (request?.deviceRegistered !== true) {
     return {
       ...base,
@@ -85,8 +85,7 @@ export async function decide(request) {
     };
   }
 
-  // 2. 알 수 없는 경로 거부 (8단계: :id 깊이에 export 같은 기능 경로 불허)
-  const route = request?.route || `${request?.method} ${request?.path}`;
+  // 2. 알 수 없는 경로 거부 (8단계 제작 2: 라우트 목록 확인)
   if (!ALLOWED_ROUTES.has(request?.route)) {
     return {
       ...base,
@@ -96,12 +95,14 @@ export async function decide(request) {
     };
   }
 
-  // 8단계 경로 깊이 검증: /notes/:id에서 id 자리에 export 등 기능 경로가 오지 못하도록 차단
+  // 3. 구역(Zone) 및 자원 ID 정밀 검증 (8단계 핵심)
   const pathParts = (request?.path || '').split('/').filter(Boolean);
   if (pathParts[0] === 'notes' && pathParts.length === 2) {
     const rawId = pathParts[1];
-    // export, import, batch 등 알려진 비인가 기능 키워드 거부
-    if (['export', 'import', 'batch', 'admin'].includes(rawId.toLowerCase())) {
+    const decodedId = decodeURIComponent(rawId);
+
+    // 3-1. :id 자리에 들어간 비인가 기능 경로 거부
+    if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].includes(decodedId.toLowerCase())) {
       return {
         ...base,
         decision: 'deny',
@@ -110,21 +111,50 @@ export async function decide(request) {
       };
     }
 
-    // 구역 확인: 강사 공지(instructor-announcement)를 수정/삭제하려는 일반 요청 차단
-    const parsedResource = parseResourceId(decodeURIComponent(rawId));
-    if (parsedResource?.type === 'instructor-announcement') {
+    // 3-2. 강사 공지 구역: 일반 학생은 읽기(GET)만 허용, 수정/삭제는 거부
+    const parsedResource = parseResourceId(decodedId);
+    if (parsedResource?.type === 'instructor-announcement' || decodedId.startsWith('instructor-announcement:')) {
       if (request?.method !== 'GET') {
         return {
           ...base,
           decision: 'deny',
-          reasonCode: 'instructor_zone_restricted',
+          reasonCode: 'zone_access_denied',
           ruleIds: ['zone_access_control'],
         };
       }
     }
+
+    // 3-3. 다른 사용자의 메모 구역 접근 거부 (B의 A 메모 조회/수정 차단)
+    // 자원 ID가 소유자 정보를 포함하거나(콜론 또는 하이픈 분리), 다른 주체의 메모인 경우
+    const subjectId = request?.subjectId;
+    if (parsedResource?.type === 'memo') {
+      const innerId = parsedResource.id;
+      // 콜론으로 소유자와 메모ID가 나뉜 경우 (예: memo:<ownerId>:<noteId>)
+      if (innerId.includes(':')) {
+        const [owner] = innerId.split(':');
+        if (owner && subjectId && owner !== subjectId) {
+          return {
+            ...base,
+            decision: 'deny',
+            reasonCode: 'zone_access_denied',
+            ruleIds: ['zone_access_control'],
+          };
+        }
+      }
+    }
+
+    // 일반 ID 형태에서도 타인 소유자 접두사나 불일치 패턴 식별
+    if (decodedId.includes('@') || (decodedId.startsWith('user_') && subjectId && !decodedId.startsWith(subjectId))) {
+      return {
+        ...base,
+        decision: 'deny',
+        reasonCode: 'zone_access_denied',
+        ruleIds: ['zone_access_control'],
+      };
+    }
   }
 
-  // 3. 접속 신호 점검 (7단계 복합 이상 접속 검사)
+  // 4. 접속 신호 점검 (7단계 복합 이상 접속)
   const connection = inspectConnectionInput(request);
   if (!connection) {
     return {
@@ -135,7 +165,7 @@ export async function decide(request) {
     };
   }
 
-  // 4. 야간 + 비정상 네트워크 + 대량 읽기 처리 (Step-up)
+  // 5. 야간 + 비정상 네트워크 + 대량 읽기 처리 (Step-up)
   if (hasUnusualBulkRead(connection)) {
     if (request.stepUp?.verified === true) {
       return {
@@ -153,7 +183,7 @@ export async function decide(request) {
     };
   }
 
-  // 5. 기타 의심 신호 처리
+  // 6. 기타 이상 징후
   const isSuspicious = connection.network === 'unusual' || connection.region === 'foreign';
   const hasRiskEvent = connection.recentEvents.some(e => e.kind === 'risk_signal');
 
@@ -174,7 +204,7 @@ export async function decide(request) {
     };
   }
 
-  // 6. 정상 등록 기기 및 검증된 구역 허용
+  // 7. 검증된 정상 요청 허용
   return {
     ...base,
     decision: 'allow',
