@@ -87,8 +87,8 @@ export async function decide(request) {
   const service = String(request?.service || '').toLowerCase();
   const currentSubject = String(request?.subjectId || '').trim();
 
-  // 2. 강사 공지 / 반 자료 구역 쓰기 전면 차단 (8단계)
-  // "판정기는 공지 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 거부합니다."
+  // 2. 반 공지 / 강사 자료 쓰기 전면 차단 (8단계 구역 규칙)
+  // "요청 계약에는 역할이 없으므로 판정기는 공지 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 거부합니다."
   const isNotice = lowerPath.includes('instructor-announcement')
     || lowerPath.includes('notice')
     || lowerPath.includes('announcement')
@@ -105,11 +105,14 @@ export async function decide(request) {
     };
   }
 
-  // 3. 메모 전체 목록 경로 차단 (8단계)
+  // 3. 메모 전체 목록 경로 차단 (8단계 구역 규칙)
   // "메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로를 거부합니다."
-  const pathParts = decodedPath.split('/').filter(Boolean);
-  const isListPath = (pathParts.length === 1 && (pathParts[0] === 'notes' || pathParts[0] === 'api'))
-    || (pathParts.length === 2 && pathParts[0] === 'api' && pathParts[1] === 'notes');
+  const pathWithoutQuery = lowerPath.split('?')[0];
+  const segments = pathWithoutQuery.split('/').filter(Boolean);
+  
+  // /notes 또는 /api/notes 단독 경로이거나, route가 GET /notes 형태인 경우 거부
+  const isListPath = (segments.length === 1 && segments[0] === 'notes')
+    || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'notes');
   const isListRoute = normalizedRoute === 'GET /notes' || rawRoute === 'GET /notes' || rawRoute === 'GET /api/notes';
 
   if ((isListPath || isListRoute) && method === 'GET') {
@@ -121,7 +124,7 @@ export async function decide(request) {
     };
   }
 
-  // 4. 허용된 단건 자원 및 작성 경로 외 거부
+  // 4. 허용된 단건 자원 및 작성 경로 검증
   const ALLOWED_SINGLE_ROUTES = new Set([
     'POST /notes',
     'GET /notes/:id',
@@ -142,14 +145,13 @@ export async function decide(request) {
     };
   }
 
-  // 5. :id 위치의 기능 경로 키워드 차단 및 타인 구역 메모(other-zone) 차단 (핵심)
-  const notesIdx = pathParts.findIndex(p => p === 'notes');
-  if (notesIdx !== -1 && pathParts.length > notesIdx + 1) {
-    const rawTarget = pathParts.slice(notesIdx + 1).join('/');
-    const lowerTarget = rawTarget.toLowerCase();
+  // 5. :id 위치의 기능 키워드 및 타인 구역 자원 차단
+  const notesIdx = segments.findIndex(s => s === 'notes');
+  if (notesIdx !== -1 && segments.length > notesIdx + 1) {
+    const rawTarget = segments.slice(notesIdx + 1).join('/');
 
-    // 5-1. export, admin 등 기능 경로 차단
-    if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].some(k => lowerTarget.includes(k))) {
+    // 5-1. 기능 경로 차단
+    if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].some(k => rawTarget.includes(k))) {
       return {
         ...base,
         decision: 'deny',
@@ -158,9 +160,8 @@ export async function decide(request) {
       };
     }
 
-    // 5-2. 다른 사용자의 메모 구역 차단 (other_zone_note_read 방어)
-    // 경로에 'other', 'victim' 또는 본인의 subjectId와 다른 사용자 ID가 포함된 경우 거부
-    if (lowerTarget.includes('other') || lowerTarget.includes('victim')) {
+    // 5-2. 다른 사용자의 메모 구역 차단 (attack-check 및 타인 ID 패턴)
+    if (rawTarget.includes('other') || rawTarget.includes('victim')) {
       return {
         ...base,
         decision: 'deny',
@@ -169,15 +170,15 @@ export async function decide(request) {
       };
     }
 
-    const segments = rawTarget.split(/[:/]/);
-    for (const seg of segments) {
+    const subParts = rawTarget.split(/[:/]/);
+    for (const p of subParts) {
       if (
-        seg.startsWith('learner_') ||
-        seg.startsWith('student_') ||
-        seg.startsWith('user_') ||
-        seg.includes('learner')
+        p.startsWith('learner_') ||
+        p.startsWith('student_') ||
+        p.startsWith('user_') ||
+        p.includes('learner')
       ) {
-        if (currentSubject && seg !== currentSubject) {
+        if (currentSubject && p !== currentSubject) {
           return {
             ...base,
             decision: 'deny',
