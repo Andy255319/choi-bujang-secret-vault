@@ -1,5 +1,3 @@
-import { parseResourceId, parseMemoResourceId } from './resource-id.mjs';
-
 export const RULE_IDS = Object.freeze([
   'device_registered',
   'step_up_required',
@@ -90,12 +88,12 @@ export async function decide(request) {
 
   // 2. 강사 공지 / 반 자료 구역 쓰기 전면 차단 (8단계 구역 규칙)
   // "요청 계약에는 역할이 없으므로 판정기는 공지 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 거부합니다."
-  const isNotice = lowerPath.includes('instructor-announcement')
+  const isNotice = lowerPath.includes('announcement')
     || lowerPath.includes('notice')
-    || lowerPath.includes('announcement')
-    || lowerRoute.includes('instructor-announcement')
-    || lowerRoute.includes('notice')
+    || lowerPath.includes('instructor')
     || lowerRoute.includes('announcement')
+    || lowerRoute.includes('notice')
+    || lowerRoute.includes('instructor')
     || service.includes('notice')
     || service.includes('announcement');
   const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
@@ -104,7 +102,7 @@ export async function decide(request) {
     return {
       ...base,
       decision: 'deny',
-      reasonCode: 'zone_access_denied',
+      reasonCode: 'route_not_allowed',
       ruleIds: ['zone_access_control'],
     };
   }
@@ -121,7 +119,7 @@ export async function decide(request) {
     return {
       ...base,
       decision: 'deny',
-      reasonCode: 'zone_access_denied',
+      reasonCode: 'route_not_allowed',
       ruleIds: ['zone_access_control'],
     };
   }
@@ -143,12 +141,12 @@ export async function decide(request) {
     return {
       ...base,
       decision: 'deny',
-      reasonCode: 'zone_access_denied',
+      reasonCode: 'route_not_allowed',
       ruleIds: ['zone_access_control'],
     };
   }
 
-  // 5. :id 위치의 기능 경로 키워드 및 타인 구역 자원 거부
+  // 5. :id 위치의 기능 경로 키워드 및 타인 구역 요청 식별 차단
   const notesIdx = segments.findIndex(s => s === 'notes');
   if (notesIdx !== -1 && segments.length > notesIdx + 1) {
     const rawTarget = segments.slice(notesIdx + 1).join('/');
@@ -158,7 +156,7 @@ export async function decide(request) {
       return {
         ...base,
         decision: 'deny',
-        reasonCode: 'zone_access_denied',
+        reasonCode: 'route_not_allowed',
         ruleIds: ['zone_access_control'],
       };
     }
@@ -168,7 +166,7 @@ export async function decide(request) {
       return {
         ...base,
         decision: 'deny',
-        reasonCode: 'zone_access_denied',
+        reasonCode: 'route_not_allowed',
         ruleIds: ['zone_access_control'],
       };
     }
