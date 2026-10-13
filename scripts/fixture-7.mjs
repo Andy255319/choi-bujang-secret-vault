@@ -14,8 +14,8 @@ const request = (signals, recentEvents) => ({
 export function fixtureRequests() {
   return {
     normal: request({ source: 'judge_fixture', region: 'local', network: 'usual', hour: 14 }, []),
-    suspicious: request({ source: 'judge_fixture', region: 'foreign', network: 'unusual', hour: 3 },
-      [{ kind: 'risk_signal', ageSeconds: 60, count: 20 }]),
+    suspicious: request({ source: 'judge_fixture', region: 'local', network: 'unusual', hour: 3 },
+      [{ kind: 'read', ageSeconds: 60, count: 20 }]),
   };
 }
 const check = (input, output) => output && typeof output === 'object'
@@ -32,9 +32,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const ordinary = await decide(normal);
     const unusual = await decide(suspicious);
     if (!check(normal, ordinary) || !check(suspicious, unusual)) throw new Error('판정기 응답 형식이 맞지 않습니다.');
-    process.stdout.write(`정상 사건: ${ordinary.decision}\n복합 이상 사건: ${unusual.decision}\n`);
-    if (ordinary.decision !== 'allow' || unusual.decision !== 'step_up') {
-      throw new Error('정상 사건은 allow, 복합 이상 사건은 step_up이어야 합니다.');
+    process.stdout.write(`정상 사건: ${ordinary.decision}\n복합 이상 사건: ${unusual.decision} (${unusual.reasonCode})\n`);
+    if (ordinary.decision !== 'allow' || unusual.decision !== 'step_up'
+        || !unusual.ruleIds.includes('unusual_bulk_read_step_up')) {
+      throw new Error('정상 사건은 allow, 정해진 복합 이상 사건은 해당 규칙으로 step_up이어야 합니다.');
     }
   } catch (error) {
     process.stderr.write(`가상 사건 첫 오류: ${error.message}\n`);

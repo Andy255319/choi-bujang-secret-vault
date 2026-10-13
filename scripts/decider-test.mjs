@@ -27,15 +27,17 @@ export async function checkDecider({ decide, ruleIds }) {
   const checks = [
     { name: '등록 기기의 정상 요청', request: normal, decision: 'allow' },
     { name: '미등록 기기의 가상 요청', request: { ...normal, requestId: randomUUID(),
-      deviceRegistered: false }, decision: 'deny', reasonCode: 'device_not_registered' },
+      deviceRegistered: false }, decision: 'deny', reasonCode: 'device_not_registered',
+    ruleId: 'device_registered' },
   ];
   if (ruleIds.includes('step_up_required')) {
     checks.push(
-      { name: '복합 이상 접속', request: suspicious, decision: 'step_up',
-        reasonCode: 'step_up_required' },
+      { name: '평소와 다른 시각·네트워크의 대량 읽기', request: suspicious,
+        decision: 'step_up', reasonCode: 'step_up_required',
+        ruleId: 'unusual_bulk_read_step_up' },
       { name: '다시 확인한 복합 이상 접속', request: { ...suspicious,
         requestId: randomUUID(), stepUp: { verified: true, authAgeSeconds: 60 } },
-      decision: 'allow' },
+      decision: 'allow', ruleId: 'unusual_bulk_read_step_up' },
     );
   }
   const results = [];
@@ -43,7 +45,8 @@ export async function checkDecider({ decide, ruleIds }) {
     const response = await decide(item.request);
     const valid = validResponse(item.request, response, ruleIds)
       && response.decision === item.decision
-      && (!item.reasonCode || response.reasonCode === item.reasonCode);
+      && (!item.reasonCode || response.reasonCode === item.reasonCode)
+      && (!item.ruleId || response.ruleIds.includes(item.ruleId));
     results.push({ name: item.name, passed: valid,
       decision: response?.decision, reasonCode: response?.reasonCode });
   }
