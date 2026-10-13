@@ -1,5 +1,3 @@
-import { parseResourceId, parseMemoResourceId } from './resource-id.mjs';
-
 export const RULE_IDS = Object.freeze([
   'device_registered',
   'step_up_required',
@@ -88,16 +86,16 @@ export async function decide(request) {
   const normalizedRoute = rawRoute.replace('/api/notes', '/notes');
   const service = String(request?.service || '').toLowerCase();
 
-  // 2. 강사 공지 / 반 자료 구역 쓰기 전면 차단 (8단계 구역 규칙)
-  // "판정기는 공지 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 거부합니다."
+  // 2. 반 공지 / 강사 자료 쓰기 전면 차단 (8단계 구역 규칙)
+  // "요청 계약에는 역할이 없으므로 판정기는 공지 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 거부합니다."
   const isNotice = lowerPath.includes('instructor-announcement')
     || lowerPath.includes('notice')
     || lowerPath.includes('announcement')
     || service.includes('announcement')
     || service.includes('notice');
-  const isWriteMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
-  if (isNotice && isWriteMethod) {
+  if (isNotice && isWrite) {
     return {
       ...base,
       decision: 'deny',
@@ -107,14 +105,13 @@ export async function decide(request) {
   }
 
   // 3. 메모 전체 목록 경로 차단 (8단계 구역 규칙)
-  // "메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로를 허용하면 안 됨"
-  // path가 /notes 또는 /api/notes 이고 하위 id가 없는 단독 목록 조회는 거부
+  // "메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로를 거부합니다."
   const pathParts = decodedPath.split('/').filter(Boolean);
-  const isNotesListPath = (pathParts.length === 1 && (pathParts[0] === 'notes' || pathParts[0] === 'api'))
+  const isListPath = (pathParts.length === 1 && (pathParts[0] === 'notes' || pathParts[0] === 'api'))
     || (pathParts.length === 2 && pathParts[0] === 'api' && pathParts[1] === 'notes');
-  const isNotesListRoute = normalizedRoute === 'GET /notes' || rawRoute === 'GET /notes';
+  const isListRoute = normalizedRoute === 'GET /notes' || rawRoute === 'GET /notes' || rawRoute === 'GET /api/notes';
 
-  if ((isNotesListPath || isNotesListRoute) && method === 'GET') {
+  if ((isListPath || isListRoute) && method === 'GET') {
     return {
       ...base,
       decision: 'deny',
@@ -123,12 +120,16 @@ export async function decide(request) {
     };
   }
 
-  // 4. 비인가 라우트 및 기능 경로 차단
+  // 4. 허용된 단건 자원 및 작성 경로 외 거부
   const ALLOWED_SINGLE_ROUTES = new Set([
     'POST /notes',
     'GET /notes/:id',
     'PUT /notes/:id',
     'DELETE /notes/:id',
+    'POST /api/notes',
+    'GET /api/notes/:id',
+    'PUT /api/notes/:id',
+    'DELETE /api/notes/:id',
   ]);
 
   if (!ALLOWED_SINGLE_ROUTES.has(rawRoute) && !ALLOWED_SINGLE_ROUTES.has(normalizedRoute)) {
@@ -140,24 +141,11 @@ export async function decide(request) {
     };
   }
 
-  // 5. :id 위치의 비인가 기능 키워드 및 타인 구역 자원 거부
+  // 5. :id 위치의 기능 경로 키워드 차단
   const notesIdx = pathParts.findIndex(p => p === 'notes');
   if (notesIdx !== -1 && pathParts.length > notesIdx + 1) {
-    const rawTarget = pathParts.slice(notesIdx + 1).join('/');
-    const lowerTarget = rawTarget.toLowerCase();
-
-    // 5-1. 기능 경로 차단
-    if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].some(k => lowerTarget.includes(k))) {
-      return {
-        ...base,
-        decision: 'deny',
-        reasonCode: 'zone_access_denied',
-        ruleIds: ['zone_access_control'],
-      };
-    }
-
-    // 5-2. 타인 구역 자원 접근 거부 (other-learner 등)
-    if (lowerTarget.includes('other') || lowerTarget.includes('victim')) {
+    const rawTarget = pathParts.slice(notesIdx + 1).join('/').toLowerCase();
+    if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].some(k => rawTarget.includes(k))) {
       return {
         ...base,
         decision: 'deny',
@@ -217,7 +205,7 @@ export async function decide(request) {
     };
   }
 
-  // 9. 정상 등록 기기의 인가된 단건 자원 요청 허용
+  // 9. 정상 등록 기기의 인가된 단건 요청 허용
   return {
     ...base,
     decision: 'allow',
