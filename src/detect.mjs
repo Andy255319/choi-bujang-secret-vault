@@ -50,16 +50,9 @@ export function detect(events) {
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
 
   const eventsBySubject = new Map();
-  // 사건 전체에서 확인된 단일 가상 기기(fixture-device-01)를 한 번이라도 식별한 사용자 기록
-  const confirmedSubjects = new Set();
-
   for (const event of events) {
     const input = readVirtualEvent(event);
     if (!input) continue;
-
-    if (input.isConfirmedDevice) {
-      confirmedSubjects.add(input.subject);
-    }
 
     const list = eventsBySubject.get(input.subject) ?? [];
     list.push(input);
@@ -88,18 +81,17 @@ export function detect(events) {
         firstInWindow += 1;
       }
 
-      // 10분 구간 내 120건 초과 조회 발생 시
+      // 10분 구간 내 120건 초과 GET 조회 발생 시
       if (getCount > LIMIT) {
         // [복합 의심 사건 규칙]
-        // 1. 비정상 네트워크(unusual) 신호가 10분 윈도우 안에 존재하고,
-        // 2. 해당 사용자에게 확인된 가상 기기(fixture-device-01)가 존재(윈도우 내 또는 전체 사건 중)할 때
-        // 도플갱어 공격으로 가짜 기기 요청이 섞여 있어도 확인된 기기 대상 회수 제안 반환
-        if (unusualCount > 0 && (confirmedCount > 0 || confirmedSubjects.has(subject))) {
+        // 120건 초과 조회 + 비정상 네트워크(unusual) 신호가 함께 나타나면
+        // 도플갱어 요청에 기기 식별값이 없더라도 계약된 가상 기기 대상 회수 제안 즉시 반환
+        if (unusualCount > 0) {
           return revocationProposal('unusual_network_burst_read', subject);
         }
 
-        // [단순 다량 조회 규칙]
-        // 이상 네트워크가 없고, 구간 전체가 확인된 가상 기기 한 대로만 구성된 경우
+        // [기존 단순 다량 조회 규칙]
+        // 비정상 네트워크가 없고, 구간 전체가 확인된 가상 기기 한 대로만 구성된 경우에만 보존
         if (unusualCount === 0 && confirmedCount === getCount) {
           burstCandidate ??= subject;
         }
