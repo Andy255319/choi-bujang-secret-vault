@@ -15,7 +15,8 @@
     li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; position: relative;}
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
     li span { color: #bfd0e5; display: block; margin-bottom: 15px;}
-    
+    .resource-id { color: #8ad8df; font: 12px ui-monospace, monospace; overflow-wrap: anywhere; margin-bottom: 12px; }
+
     .auth-box { margin-bottom: 30px; padding: 22px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
     input, textarea { padding: 12px; border-radius: 8px; border: 1px solid #51667c; background: #101a28; color: white; font-size: 15px; width: 100%; box-sizing: border-box; margin-bottom: 10px;}
     textarea { resize: vertical; min-height: 80px; }
@@ -32,7 +33,7 @@
   <main>
     <div class="eyebrow">BYTE BACK · 5단계 데이터 관리</div>
     <h1>내 자료 관리</h1>
-    
+
     <div id="login-section" class="auth-box">
       <h2>로그인</h2>
       <input type="email" id="email" placeholder="이메일 주소" />
@@ -46,7 +47,7 @@
         <span>정상적으로 로그인되었습니다.</span>
         <button id="logout-btn">로그아웃</button>
       </div>
-      
+
       <div class="auth-box">
         <h3 id="form-title">새 자료 작성</h3>
         <input type="hidden" id="note-id" />
@@ -97,7 +98,7 @@
           throw new Error(err.error || '목록을 불러올 권한이 없습니다.');
         }
         const data = await response.json();
-        
+
         if (data.notes.length === 0) {
           list.innerHTML = '<li>아직 등록된 자료가 없습니다.</li>';
           return;
@@ -107,22 +108,25 @@
           const item = document.createElement('li');
           const title = document.createElement('strong');
           title.textContent = note.title;
+          const resourceId = document.createElement('code');
+          resourceId.className = 'resource-id';
+          resourceId.textContent = `메모 자원 ID · ${note.resourceId || note.id}`;
           const body = document.createElement('span');
           body.textContent = note.body;
           const btnBox = document.createElement('div');
-          
+
           const editBtn = document.createElement('button');
           editBtn.className = 'btn-small';
           editBtn.textContent = '수정';
-          editBtn.onclick = () => startEdit(note.id, note.title, note.body);
-          
+          editBtn.onclick = () => startEdit(note.resourceId || note.id, note.title, note.body);
+
           const delBtn = document.createElement('button');
           delBtn.className = 'btn-small btn-danger';
           delBtn.textContent = '삭제';
-          delBtn.onclick = () => deleteNote(note.id);
-          
+          delBtn.onclick = () => deleteNote(note.resourceId || note.id);
+
           btnBox.append(editBtn, delBtn);
-          item.append(title, body, btnBox);
+          item.append(title, resourceId, body, btnBox);
           return item;
         }));
       } catch (error) {
@@ -156,7 +160,7 @@
       if (!title || !body) return alert("제목과 내용을 모두 입력하세요.");
 
       const method = id ? 'PUT' : 'POST';
-      const url = id ? `/api/notes/${id}` : '/api/notes';
+      const url = id ? `/api/notes/${encodeURIComponent(id)}` : '/api/notes';
       const payload = { title, body };
 
       try {
@@ -165,12 +169,12 @@
           headers: await getAuthHeaders(),
           body: JSON.stringify(payload)
         });
-        
+
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}));
           throw new Error(errData.error || `서버가 저장을 거부했습니다 (상태코드 ${response.status})`);
         }
-        
+
         document.getElementById('cancel-edit-btn').click();
         fetchNotes();
       } catch (err) {
@@ -181,7 +185,7 @@
     async function deleteNote(id) {
       if (!confirm("정말 삭제하시겠습니까?")) return;
       try {
-        const response = await fetch(`/api/notes/${id}`, {
+        const response = await fetch(`/api/notes/${encodeURIComponent(id)}`, {
           method: 'DELETE',
           headers: await getAuthHeaders()
         });
@@ -195,7 +199,7 @@
     document.getElementById('login-btn').addEventListener('click', async () => {
       const email = document.getElementById('email').value;
       const password = document.getElementById('password').value;
-      loginError.textContent = ''; 
+      loginError.textContent = '';
       const sb = await getSupabase();
       const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) loginError.textContent = `로그인 실패: ${error.message}`;
