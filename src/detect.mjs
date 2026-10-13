@@ -5,7 +5,7 @@ const LIMIT = 120;
 // 계약에 명시된 단 하나의 가상 기기만 회수 제안 대상으로 사용할 수 있습니다.
 const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 
-// 계약에 정의된 값만 읽습니다. 누락·불명확한 네트워크나 기기는 정상으로 추정하지 않습니다.
+// 계약에 정의된 가상 사건 필드만 읽습니다. 누락·불명확한 네트워크나 기기는 정상으로 추정하지 않습니다.
 // 메모 본문, 토큰, 실명, 지역 등 계약 밖 필드는 복사·저장하지 않습니다.
 function readVirtualEvent(event) {
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
@@ -13,9 +13,14 @@ function readVirtualEvent(event) {
   const at = event.at;
   const method = typeof event.method === 'string' ? event.method.trim().toUpperCase() : '';
   const subject = event.identity?.sub;
-  const unusualNetwork = event.networkStatus === 'unusual';
-  const virtualDevice = event.virtualDevice;
 
+  // 비정상 네트워크 신호 판정: networkStatus 또는 signals.network 또는 network 필드 대응
+  const unusualNetwork = event.networkStatus === 'unusual'
+    || event.network === 'unusual'
+    || event.signals?.network === 'unusual';
+
+  // 가상 기기 정보 판정
+  const virtualDevice = event.virtualDevice;
   const isConfirmedDevice = virtualDevice !== null
     && typeof virtualDevice === 'object'
     && !Array.isArray(virtualDevice)
@@ -55,7 +60,6 @@ function revocationProposal(reasonCode, subject) {
 export function detect(events) {
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
 
-  // 사용자별 사건 분리 및 확인된 가상 기기 보유 여부 추적
   const eventsBySubject = new Map();
   const confirmedSubjects = new Set();
 
@@ -75,9 +79,7 @@ export function detect(events) {
   let burstCandidate = null;
 
   for (const [subject, list] of eventsBySubject) {
-    // 확인된 가상 기기가 없는 사용자는 회수 제안 대상이 될 수 없습니다.
     const hasConfirmedDevice = confirmedSubjects.has(subject);
-
     list.sort((a, b) => a.timestamp - b.timestamp);
 
     let firstInWindow = 0;
@@ -101,7 +103,6 @@ export function detect(events) {
       if (getCount > LIMIT) {
         // [복합 의심 사건 규칙]
         // 비정상 네트워크(unusual) 신호가 함께 있고, 확인된 가상 기기를 보유한 사용자인 경우
-        // 도플갱어 공격으로 가짜 기기 요청이 섞여도 해당 사용자의 확인 기기에 대해 즉시 제안 반환
         if (unusualCount > 0 && hasConfirmedDevice) {
           return revocationProposal('unusual_network_burst_read', subject);
         }
