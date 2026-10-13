@@ -65,7 +65,6 @@ export function detect(events) {
     readsBySubject.set(input.subject, reads);
   }
 
-  let complexCandidate = null;
   let burstCandidate = null;
 
   for (const [subject, reads] of readsBySubject) {
@@ -87,22 +86,24 @@ export function detect(events) {
 
       const windowCount = lastInWindow - firstInWindow + 1;
 
-      // 회수 제안은 계약에 따라 한 개의 확인된 가상 기기만으로 구성된 조회 구간에 한정합니다.
-      // 확인되지 않은 기기나 기기 정보가 없는 요청이 섞인 구간은 회수 제안을 만들지 않습니다.
-      if (windowCount > LIMIT && confirmedCount === windowCount) {
-        if (unusualCount > 0) {
-          complexCandidate ??= subject;
-        } else {
+      // 10분 구간 내 120건 초과 조회 발생 시
+      if (windowCount > LIMIT) {
+        // [복합 의심 사건]
+        // 같은 사용자·10분 구간에 120건 초과 + 확인된 대상 기기 존재 + 비정상 네트워크 신호
+        // 도플갱어 요청이 섞여 있어도 확인된 가상 기기 대상을 명시하여 복합 회수 제안 반환
+        if (confirmedCount > 0 && unusualCount > 0) {
+          return revocationProposal('unusual_network_burst_read', subject);
+        }
+
+        // [기존 단순 다량 조회]
+        // 구간 전체가 확인된 가상 기기 한 대로만 구성되어 있고 비정상 네트워크가 없는 경우
+        if (confirmedCount === windowCount && unusualCount === 0) {
           burstCandidate ??= subject;
         }
       }
     }
   }
 
-  // 복합 의심 사유를 최우선으로 제안합니다.
-  if (complexCandidate) {
-    return revocationProposal('unusual_network_burst_read', complexCandidate);
-  }
   if (burstCandidate) {
     return revocationProposal('burst_read', burstCandidate);
   }
