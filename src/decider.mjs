@@ -85,7 +85,7 @@ export async function decide(request) {
     };
   }
 
-  // 2. 알 수 없는 라우트 거부 (8단계: 정규 라우트 외 거부)
+  // 2. 알 수 없는 라우트 거부 (정규 라우트 외 거부)
   const normalizedRoute = (request?.route || '').replace('/api/notes', '/notes');
   if (!ALLOWED_ROUTES.has(request?.route) && !ALLOWED_ROUTES.has(normalizedRoute)) {
     return {
@@ -98,7 +98,13 @@ export async function decide(request) {
 
   // 3. 구역(Zone) 및 자원 권한 검증 (8단계 핵심)
   const fullPath = String(request?.path || '');
-  const decodedPath = decodeURIComponent(fullPath);
+  let decodedPath = fullPath;
+  try {
+    decodedPath = decodeURIComponent(fullPath);
+  } catch {
+    // 디코딩 에러 방어
+  }
+
   const pathParts = decodedPath.split('/').filter(Boolean);
   const notesIdx = pathParts.findIndex(p => p === 'notes');
 
@@ -106,7 +112,7 @@ export async function decide(request) {
     const rawTarget = pathParts.slice(notesIdx + 1).join('/');
     const lowerTarget = rawTarget.toLowerCase();
 
-    // 3-1. :id 깊이에 export, import 등 기능 경로를 두는 경우 거부
+    // 3-1. :id 깊이에 기능 키워드가 오는 경우 거부
     if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].some(k => lowerTarget.includes(k))) {
       return {
         ...base,
@@ -116,14 +122,14 @@ export async function decide(request) {
       };
     }
 
-    // 3-2. 강사 공지 구역 (instructor-announcement): 일반 학생은 수정 불가
+    // 3-2. 강사 공지 구역: 일반 학생은 GET만 허용, 수정(PUT/POST/DELETE/PATCH) 거부
     const isNotice = lowerTarget.includes('instructor-announcement') || lowerTarget.startsWith('notice');
     if (isNotice) {
       if (request?.method !== 'GET') {
         return {
           ...base,
           decision: 'deny',
-          reasonCode: 'route_not_allowed',
+          reasonCode: 'zone_access_denied',
           ruleIds: ['zone_access_control'],
         };
       }
@@ -131,31 +137,27 @@ export async function decide(request) {
 
     // 3-3. 타인 메모 구역 (A 자기 메모는 허용, B의 A 메모는 거부)
     const currentSubject = String(request?.subjectId || '').trim();
-    
-    // 대상 경로에 소유자 표시(콜론 분리 등)가 있는 경우 검사
-    // 예: memo:learner_a:note-1, learner_a:note-1, memo:other:1
-    const segments = rawTarget.split(/[:/]/);
-    for (const seg of segments) {
-      if (seg.startsWith('learner_') || seg.startsWith('student_') || seg.startsWith('user_') || seg.startsWith('other_') || seg === 'other') {
-        if (currentSubject && seg !== currentSubject) {
+
+    // 구분자(:, /, -) 분석으로 대상 소유자 추출
+    // 예: memo:other-learner:note-1 -> tokens에 'other-learner' 포함
+    const tokens = rawTarget.split(/[:/]/);
+    for (const token of tokens) {
+      if (
+        token.startsWith('learner_') ||
+        token.startsWith('student_') ||
+        token.startsWith('user_') ||
+        token.includes('other') ||
+        token.includes('victim')
+      ) {
+        if (currentSubject && token !== currentSubject) {
           return {
             ...base,
             decision: 'deny',
-            reasonCode: 'route_not_allowed',
+            reasonCode: 'zone_access_denied',
             ruleIds: ['zone_access_control'],
           };
         }
       }
-    }
-
-    // 경로에 'other' 또는 'victim' 등 타인 메모를 암시하는 키워드가 있고 현재 subject와 불일치 시 거부
-    if ((lowerTarget.includes('other') || lowerTarget.includes('victim')) && !lowerTarget.includes(currentSubject.toLowerCase())) {
-      return {
-        ...base,
-        decision: 'deny',
-        reasonCode: 'route_not_allowed',
-        ruleIds: ['zone_access_control'],
-      };
     }
   }
 
@@ -209,7 +211,7 @@ export async function decide(request) {
     };
   }
 
-  // 7. 정상 등록 기기 및 허용된 구역
+  // 7. 정상 등록 기기 및 허용 구역
   return {
     ...base,
     decision: 'allow',
