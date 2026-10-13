@@ -34,7 +34,13 @@ function readVirtualEvent(event) {
   }
   if (!Number.isFinite(timestamp)) return null;
 
-  return { timestamp, isGet: method === 'GET', subject, unusualNetwork, isConfirmedDevice };
+  return {
+    timestamp,
+    isGet: method === 'GET',
+    subject,
+    unusualNetwork,
+    isConfirmedDevice,
+  };
 }
 
 function revocationProposal(reasonCode, subject) {
@@ -49,10 +55,17 @@ function revocationProposal(reasonCode, subject) {
 export function detect(events) {
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
 
+  // 사용자별 사건 분리 및 확인된 가상 기기 보유 여부 추적
   const eventsBySubject = new Map();
+  const confirmedSubjects = new Set();
+
   for (const event of events) {
     const input = readVirtualEvent(event);
     if (!input) continue;
+
+    if (input.isConfirmedDevice) {
+      confirmedSubjects.add(input.subject);
+    }
 
     const list = eventsBySubject.get(input.subject) ?? [];
     list.push(input);
@@ -62,6 +75,9 @@ export function detect(events) {
   let burstCandidate = null;
 
   for (const [subject, list] of eventsBySubject) {
+    // 확인된 가상 기기가 없는 사용자는 회수 제안 대상이 될 수 없습니다.
+    const hasConfirmedDevice = confirmedSubjects.has(subject);
+
     list.sort((a, b) => a.timestamp - b.timestamp);
 
     let firstInWindow = 0;
@@ -81,17 +97,17 @@ export function detect(events) {
         firstInWindow += 1;
       }
 
-      // 10분 구간 내 120건 초과 GET 조회 발생 시
+      // 10분 구간 내 GET 조회가 120건을 초과할 때
       if (getCount > LIMIT) {
         // [복합 의심 사건 규칙]
-        // 120건 초과 조회 + 비정상 네트워크(unusual) 신호가 함께 나타나면
-        // 도플갱어 요청에 기기 식별값이 없더라도 계약된 가상 기기 대상 회수 제안 즉시 반환
-        if (unusualCount > 0) {
+        // 비정상 네트워크(unusual) 신호가 함께 있고, 확인된 가상 기기를 보유한 사용자인 경우
+        // 도플갱어 공격으로 가짜 기기 요청이 섞여도 해당 사용자의 확인 기기에 대해 즉시 제안 반환
+        if (unusualCount > 0 && hasConfirmedDevice) {
           return revocationProposal('unusual_network_burst_read', subject);
         }
 
         // [기존 단순 다량 조회 규칙]
-        // 비정상 네트워크가 없고, 구간 전체가 확인된 가상 기기 한 대로만 구성된 경우에만 보존
+        // 이상 네트워크가 없고, 구간 전체가 확인된 가상 기기 한 대로만 구성된 경우에만 보존
         if (unusualCount === 0 && confirmedCount === getCount) {
           burstCandidate ??= subject;
         }
