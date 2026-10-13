@@ -3,15 +3,16 @@ const WINDOW_MS = 10 * 60 * 1000;
 const LIMIT = 120;
 const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 
+// 계약에 정의된 가상 사건 필드만 읽습니다. 민감 필드는 읽거나 복사하지 않습니다.
 function readVirtualEvent(event) {
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
   const at = event.at;
-  const method = typeof event.method === 'string' ? event.method.toUpperCase() : '';
+  const method = event.method;
   const subject = event.identity?.sub;
   const unusualNetwork = event.networkStatus === 'unusual';
-
   const virtualDevice = event.virtualDevice;
+
   const confirmedDeviceId = virtualDevice !== null
     && typeof virtualDevice === 'object'
     && !Array.isArray(virtualDevice)
@@ -54,6 +55,7 @@ export function detect(events) {
     readsBySubject.set(input.subject, reads);
   }
 
+  let complexCandidate = null;
   let simpleCandidate = null;
 
   for (const [subject, reads] of readsBySubject) {
@@ -75,19 +77,24 @@ export function detect(events) {
 
       const windowCount = lastInWindow - firstInWindow + 1;
 
-      // 1. 복합 의심 사건 (10분 구간 내 120건 초과 + 비정상 네트워크 신호 존재)
-      // 도플갱어가 섞여 확인 기기 비율이 달라져도 복합 신호 탐지 즉시 회수 제안 반환
-      if (windowCount > LIMIT && unusualCount > 0) {
-        return revocationProposal('unusual_network_burst_read', subject);
-      }
-
-      // 2. 기존 단독 다량 조회 (확인된 가상 기기만으로 120건 초과 구성된 경우)
-      if (windowCount > LIMIT && confirmedCount === windowCount) {
-        simpleCandidate ??= subject;
+      // 10분 구간 내 120건 초과 조회 발생 시
+      if (windowCount > LIMIT) {
+        // 복합 의심 사건: 확인된 기기 신호가 포함되어 있고 비정상 네트워크가 함께 존재할 때
+        if (confirmedCount > 0 && unusualCount > 0) {
+          complexCandidate ??= subject;
+        }
+        // 기존 단순 다량 조회: 해당 구간 전체가 확인된 가상 기기 하나로만 구성되어 있을 때
+        else if (confirmedCount === windowCount && unusualCount === 0) {
+          simpleCandidate ??= subject;
+        }
       }
     }
   }
 
+  // 복합 의심 사유를 최우선으로 제안합니다.
+  if (complexCandidate) {
+    return revocationProposal('unusual_network_burst_read', complexCandidate);
+  }
   if (simpleCandidate) {
     return revocationProposal('burst_read', simpleCandidate);
   }
