@@ -1,5 +1,6 @@
 import { fixtureRequests } from '../scripts/fixture-7.mjs';
 import { decide } from './decider.mjs';
+import { detect } from './detect.mjs';
 
 export async function runAttackChecks(config) {
   const checks = [];
@@ -7,8 +8,11 @@ export async function runAttackChecks(config) {
   // 6단계 이상은 엔진 실제 호출이 아닌 계약 모양의 로컬 가상 요청만 점검합니다.
   if (config.step >= 6) {
     const { normal, suspicious } = fixtureRequests();
-    const unregisteredReq = { ...normal, requestId: 'attack-check-unregistered-device',
-      deviceRegistered: false };
+    const unregisteredReq = {
+      ...normal,
+      requestId: 'attack-check-unregistered-device',
+      deviceRegistered: false,
+    };
     const unregResult = await decide(unregisteredReq);
     const unregBlocked = unregResult.decision === 'deny'
       && unregResult.reasonCode === 'device_not_registered';
@@ -46,8 +50,11 @@ export async function runAttackChecks(config) {
 
       // This is only a simulated follow-up carrying the contract's verified flag.
       // It does not establish that a new login was completed for the same user.
-      const followUp = { ...suspicious, requestId: 'attack-check-step-up-follow-up',
-        stepUp: { verified: true, authAgeSeconds: 60 } };
+      const followUp = {
+        ...suspicious,
+        requestId: 'attack-check-step-up-follow-up',
+        stepUp: { verified: true, authAgeSeconds: 60 },
+      };
       const followUpResult = await decide(followUp);
       const followUpAllowed = followUpResult.decision === 'allow'
         && followUpResult.reasonCode === 'approved';
@@ -58,44 +65,67 @@ export async function runAttackChecks(config) {
           ? '가상 확인 완료 표시로 후속 요청이 허용됨; 실제 재로그인 검증은 미실행'
           : `가상 후속 요청이 허용되지 않음 (decision: ${followUpResult.decision}, reasonCode: ${followUpResult.reasonCode}); 실제 재로그인 검증은 미실행`,
       });
+
       if (config.step >= 8) {
-      // 타인 메모 접근 차단 점검
-      const otherUserReq = {
-        ...normal,
-        requestId: 'attack-check-other-zone',
-        path: '/notes/memo%3Aother-learner%3Anote-1',
-        route: 'GET /notes/:id',
-      };
-      const otherResult = await decide(otherUserReq);
-      const otherBlocked = otherResult.decision === 'deny';
-      checks.push({
-        attackId: 'other_zone_note_read',
-        expected: '다른 사용자의 메모 구역 접근 거부 (zone_access_denied)',
-        observed: otherBlocked
-          ? '다른 구역 메모 요청이 정상 거부됨'
-          : `다른 구역 요청이 허용됨 (decision: ${otherResult.decision})`,
-      });
+        // 타인 메모 접근 차단 점검
+        const otherUserReq = {
+          ...normal,
+          requestId: 'attack-check-other-zone',
+          path: '/notes/memo%3Aother-learner%3Anote-1',
+          route: 'GET /notes/:id',
+        };
+        const otherResult = await decide(otherUserReq);
+        const otherBlocked = otherResult.decision === 'deny';
+        checks.push({
+          attackId: 'other_zone_note_read',
+          expected: '다른 사용자의 메모 구역 접근 거부 (zone_access_denied)',
+          observed: otherBlocked
+            ? '다른 구역 메모 요청이 정상 거부됨'
+            : `다른 구역 요청이 허용됨 (decision: ${otherResult.decision})`,
+        });
 
-      // 학생의 공지 수정 차단 점검
-      const noticeModifyReq = {
-        ...normal,
-        requestId: 'attack-check-notice-modify',
-        method: 'PUT',
-        path: '/notes/instructor-announcement%3Anotice-1',
-        route: 'PUT /notes/:id',
-      };
-      const noticeResult = await decide(noticeModifyReq);
-      const noticeBlocked = noticeResult.decision === 'deny';
-      checks.push({
-        attackId: 'notice_zone_modify_denied',
-        expected: '학생의 공지 수정 시도 거부 (zone_access_denied)',
-        observed: noticeBlocked
-          ? '공지 수정 시도가 정상 거부됨'
-          : `공지 수정이 허용됨 (decision: ${noticeResult.decision})`,
-      });
-    }
+        // 학생의 공지 수정 차단 점검
+        const noticeModifyReq = {
+          ...normal,
+          requestId: 'attack-check-notice-modify',
+          method: 'PUT',
+          path: '/notes/instructor-announcement%3Anotice-1',
+          route: 'PUT /notes/:id',
+        };
+        const noticeResult = await decide(noticeModifyReq);
+        const noticeBlocked = noticeResult.decision === 'deny';
+        checks.push({
+          attackId: 'notice_zone_modify_denied',
+          expected: '학생의 공지 수정 시도 거부 (zone_access_denied)',
+          observed: noticeBlocked
+            ? '공지 수정 시도가 정상 거부됨'
+            : `공지 수정이 허용됨 (decision: ${noticeResult.decision})`,
+        });
+      }
 
-      
+      if (config.step >= 9) {
+        const START = Date.UTC(2026, 9, 1, 0, 0, 0);
+        const suspiciousBurst = Array.from({ length: 121 }, (_, index) => ({
+          at: new Date(START + index * 1000).toISOString(),
+          method: 'GET',
+          identity: { sub: 'learner_fixture' },
+          networkStatus: 'unusual',
+          virtualDevice: { id: 'fixture-device-01', verified: true },
+        }));
+
+        const detectResult = detect(suspiciousBurst);
+        const isComplexProposed = detectResult?.action === 'propose_revocation'
+          && detectResult?.reasonCode === 'unusual_network_burst_read'
+          && detectResult?.target?.id === 'fixture-device-01';
+
+        checks.push({
+          attackId: 'complex_suspicious_revocation_proposed',
+          expected: '복합 의심 사건 탐지 및 권한 회수 제안 (propose_revocation)',
+          observed: isComplexProposed
+            ? '가상 복합 사건에서 fixture-device-01 회수 제안이 정상 생성됨'
+            : `회수 제안 미생성 또는 형식 불일치 (action: ${detectResult?.action}, reasonCode: ${detectResult?.reasonCode})`,
+        });
+      }
     }
     return checks;
   }
