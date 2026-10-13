@@ -6,7 +6,6 @@ const LIMIT = 120;
 const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 
 // 계약에 정의된 가상 사건 필드만 읽습니다. 누락·불명확한 네트워크나 기기는 정상으로 추정하지 않습니다.
-// 메모 본문, 토큰, 실명, 지역 등 추가 필드는 복사·저장하지 않습니다.
 function readVirtualEvent(event) {
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
@@ -63,6 +62,7 @@ export function detect(events) {
     readsBySubject.set(input.subject, reads);
   }
 
+  let complexCandidate = null;
   let burstCandidate = null;
 
   for (const [subject, reads] of readsBySubject) {
@@ -84,25 +84,25 @@ export function detect(events) {
 
       const windowCount = lastInWindow - firstInWindow + 1;
 
-      // 10분 구간 내 120건 초과 조회 시
+      // 10분 구간 내 조회가 120건을 초과할 때
       if (windowCount > LIMIT) {
-        // [복합 규칙]
-        // 120건 초과 + 명시적 unusual 네트워크 + 구간 내 확인된 대상 가상 기기가 존재하는 경우
-        // 도플갱어 요청이 혼합 유입되어도 확인된 기기 대상 회수 제안 즉시 반환
+        // 1. 복합 의심 사건: 비정상 네트워크가 존재하고, 확인된 대상 기기가 구간 내에 존재하는 경우
         if (unusualCount > 0 && confirmedCount > 0) {
-          return revocationProposal('unusual_network_burst_read', subject);
+          complexCandidate ??= subject;
         }
-
-        // [기존 단순 다량 조회 규칙]
-        // 120건 초과 + 이상 네트워크 없음 + 구간 전체가 확인된 가상 기기 한 대로만 구성된 경우
-        if (unusualCount === 0 && confirmedCount === windowCount) {
+        // 2. 단순 다량 조회: 비정상 네트워크가 없고, 구간 전체가 확인된 대상 기기만으로 구성된 경우
+        else if (unusualCount === 0 && confirmedCount === windowCount) {
           burstCandidate ??= subject;
         }
       }
     }
   }
 
-  // 복합 의심 사건이 없고 단순 다량 조회만 성립한 경우
+  // 복합 의심 사건(unusual_network_burst_read)을 단순 다량 조회보다 무조건 우선 반환
+  if (complexCandidate) {
+    return revocationProposal('unusual_network_burst_read', complexCandidate);
+  }
+
   if (burstCandidate) {
     return revocationProposal('burst_read', burstCandidate);
   }
