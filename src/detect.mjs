@@ -24,9 +24,16 @@ function readVirtualEvent(event) {
     ? VIRTUAL_DEVICE_ID
     : null;
 
-  if (typeof subject !== 'string' || !subject || typeof at !== 'string') return null;
+  if (typeof subject !== 'string' || !subject || at === undefined || at === null) return null;
 
   return { at, method, subject, unusualNetwork, confirmedDeviceId };
+}
+
+function parseTimestamp(at) {
+  if (typeof at === 'number') return at;
+  if (at instanceof Date) return at.getTime();
+  if (typeof at === 'string') return Date.parse(at);
+  return NaN;
 }
 
 function revocationProposal(reasonCode, subject) {
@@ -46,7 +53,7 @@ export function detect(events) {
     const input = readVirtualEvent(event);
     if (!input || input.method !== 'GET') continue;
 
-    const timestamp = Date.parse(input.at);
+    const timestamp = parseTimestamp(input.at);
     if (!Number.isFinite(timestamp)) continue;
 
     const reads = readsBySubject.get(input.subject) ?? [];
@@ -58,6 +65,7 @@ export function detect(events) {
     readsBySubject.set(input.subject, reads);
   }
 
+  let complexCandidate = null;
   let burstCandidate = null;
 
   for (const [subject, reads] of readsBySubject) {
@@ -79,22 +87,22 @@ export function detect(events) {
 
       const windowCount = lastInWindow - firstInWindow + 1;
 
-      // 10분 구간 내 120건 초과 조회 시
-      if (windowCount > LIMIT) {
-        // 1. 복합 의심 사건: 확인된 기기 신호가 포함되어 있고 비정상 네트워크가 존재하면 즉시 제안 반환
-        if (confirmedCount > 0 && unusualCount > 0) {
-          return revocationProposal('unusual_network_burst_read', subject);
-        }
-
-        // 2. 단순 다량 조회: 전건이 확인된 기기로만 이루어진 경우 후보 등록
-        if (confirmedCount === windowCount && unusualCount === 0) {
+      // 회수 제안은 계약에 따라 한 개의 확인된 가상 기기만으로 구성된 조회 구간에 한정합니다.
+      // 확인되지 않은 기기나 기기 정보가 없는 요청이 섞인 구간은 회수 제안을 만들지 않습니다.
+      if (windowCount > LIMIT && confirmedCount === windowCount) {
+        if (unusualCount > 0) {
+          complexCandidate ??= subject;
+        } else {
           burstCandidate ??= subject;
         }
       }
     }
   }
 
-  // 복합 사건이 없고 단순 다량 조회만 있는 경우
+  // 복합 의심 사유를 최우선으로 제안합니다.
+  if (complexCandidate) {
+    return revocationProposal('unusual_network_burst_read', complexCandidate);
+  }
   if (burstCandidate) {
     return revocationProposal('burst_read', burstCandidate);
   }
