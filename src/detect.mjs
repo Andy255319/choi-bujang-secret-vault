@@ -1,23 +1,20 @@
-// 9단계 로컬 연습용 탐지기입니다.
+// 9단계 로컬 연습용 탐지기입니다. 운영 사건 전달이나 회수 집행을 하지 않습니다.
+// 입력은 반 엔진이 검증한 사건이어야 하며, 브라우저가 보낸 사용자 번호는 신원으로 쓰지 않습니다.
 const WINDOW_MS = 10 * 60 * 1000;
 const LIMIT = 120;
+// 계약에 명시된 단 하나의 가상 기기만 회수 제안 대상으로 사용할 수 있습니다.
 const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 
-// 계약에 정의된 가상 사건 필드만 읽습니다. 민감 필드는 읽거나 복사하지 않습니다.
+// 계약에 정의된 값만 읽습니다. 민감 필드나 추가 필드는 복사·저장·출력하지 않습니다.
 function readVirtualEvent(event) {
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
   const at = event.at;
-  const method = typeof event.method === 'string' ? event.method.trim().toUpperCase() : '';
-  const subject = event.identity?.sub ?? event.subject ?? event.subjectId;
-
-  // 비정상 네트워크 신호 식별 (docs/DETECT_EVENTS.md 기준)
-  const unusualNetwork = event.networkStatus === 'unusual'
-    || event.network === 'unusual'
-    || event.signals?.network === 'unusual';
-
-  // 확인된 단일 가상 기기 판별
+  const method = event.method;
+  const subject = event.identity?.sub;
+  const unusualNetwork = event.networkStatus === 'unusual';
   const virtualDevice = event.virtualDevice;
+
   const confirmedDeviceId = virtualDevice !== null
     && typeof virtualDevice === 'object'
     && !Array.isArray(virtualDevice)
@@ -26,15 +23,9 @@ function readVirtualEvent(event) {
     ? VIRTUAL_DEVICE_ID
     : null;
 
-  if (typeof subject !== 'string' || !subject || at === undefined || at === null) return null;
+  if (typeof subject !== 'string' || !subject || typeof at !== 'string') return null;
 
   return { at, method, subject, unusualNetwork, confirmedDeviceId };
-}
-
-function parseTimestamp(at) {
-  if (typeof at === 'number') return at;
-  if (at instanceof Date) return at.getTime();
-  return Date.parse(at);
 }
 
 function revocationProposal(reasonCode, subject) {
@@ -54,7 +45,7 @@ export function detect(events) {
     const input = readVirtualEvent(event);
     if (!input || input.method !== 'GET') continue;
 
-    const timestamp = parseTimestamp(input.at);
+    const timestamp = Date.parse(input.at);
     if (!Number.isFinite(timestamp)) continue;
 
     const reads = readsBySubject.get(input.subject) ?? [];
@@ -65,8 +56,6 @@ export function detect(events) {
     });
     readsBySubject.set(input.subject, reads);
   }
-
-  let burstCandidate = null;
 
   for (const [subject, reads] of readsBySubject) {
     reads.sort((a, b) => a.timestamp - b.timestamp);
@@ -87,25 +76,16 @@ export function detect(events) {
 
       const windowCount = lastInWindow - firstInWindow + 1;
 
-      // 10분 구간 내 120건 초과 조회 발생 시
-      if (windowCount > LIMIT) {
-        // 복합 의심 사건: 확인된 기기 신호가 포함되어 있고 비정상 네트워크 신호가 함께 존재할 때
-        // 도플갱어 요청이 섞여 있어도 즉시 복합 회수 제안을 반환합니다.
-        if (confirmedCount > 0 && unusualCount > 0) {
+      // 10분 구간 내 120건 초과이고 전건 확인된 가상 기기인 경우
+      if (windowCount > LIMIT && confirmedCount === windowCount) {
+        // 평소와 다른 네트워크와 갑작스러운 다량 조회가 함께 나타날 때만 복합 의심 회수 제안
+        if (unusualCount > 0) {
           return revocationProposal('unusual_network_burst_read', subject);
-        }
-
-        // 기존 단순 다량 조회: 전건이 확인된 기기 하나로만 구성된 경우
-        if (confirmedCount === windowCount && unusualCount === 0) {
-          burstCandidate ??= subject;
         }
       }
     }
   }
 
-  if (burstCandidate) {
-    return revocationProposal('burst_read', burstCandidate);
-  }
-
+  // 복합 의심 사건이 아니면 모두 관찰(observe)로 유지합니다.
   return { action: 'observe' };
 }
