@@ -85,7 +85,7 @@ npm run decider:test
 
 ### 8단계: 자료마다 갈 수 있는 구역을 나눕니다
 
-현재 `aleph.config.json`은 8단계입니다. `src/resource-id.mjs`는 메모를 `memo:<ID>`로, 강사 공지를 `instructor-announcement:<ID>`로 구분하므로 두 종류의 자료 ID가 서로 섞이지 않습니다. 기존 메모 ID와 기존 주소 형식은 계속 처리되며, 공지 유형 ID를 메모 API에 전달하면 거부됩니다.
+8단계 작업 당시 `aleph.config.json`을 8단계로 설정했습니다. 현재 설정 단계는 9입니다. `src/resource-id.mjs`는 메모를 `memo:<ID>`로, 강사 공지를 `instructor-announcement:<ID>`로 구분하므로 두 종류의 자료 ID가 서로 섞이지 않습니다. 기존 메모 ID와 기존 주소 형식은 계속 처리되며, 공지 유형 ID를 메모 API에 전달하면 거부됩니다.
 
 `api/notes.js`와 `api/notes/[id].js`는 요청 본문의 `role`을 권한 근거로 쓰지 않습니다. 로그인 검증 결과의 학생 ID와 DB에 저장된 `owner_id`를 다시 대조하고, 일치하지 않거나 자료가 없으면 `not_found_or_not_owner`로 응답합니다. 기존 중첩 API 경로도 같은 검사기를 사용합니다. 이 검사는 API 직접 요청에도 적용되며 화면 메뉴 변경은 하지 않았습니다.
 
@@ -98,6 +98,19 @@ node --test test/resource-id.test.mjs test/api-owner-scope.test.mjs
 ```
 
 정상 결과는 자원 ID의 타입 구분·기존 ID 호환 및 목록·단건·중첩 API의 소유자 검사 테스트 통과입니다. 이 로컬 테스트는 배포 API에 직접 요청한 실측이나 심판 판정이 아닙니다.
+
+### 9단계: 도플갱어를 찾고 권한을 거둡니다
+
+`aleph.config.json`의 현재 단계는 9입니다. `src/detect.mjs`는 계약에 정의된 가상 사건만 사용하며, 같은 주체의 `GET` 조회를 10분 구간으로 집계합니다. 확인된 단일 가상 기기 `fixture-device-01`의 조회가 120건을 넘으면 회수 **제안**을 내고, 같은 구간에 검증 분류된 비정상 네트워크 신호가 함께 있으면 `unusual_network_burst_read` 이유 코드를 남깁니다. 지역 정보만으로 탐지하지 않습니다.
+
+저장소 루트에서 로컬 가상 사건을 확인하세요.
+
+```sh
+npm run detect:test
+node --test test/detect-input.test.mjs
+```
+
+정상 결과는 탐지 연습 사례와 입력 테스트가 통과하고, 제안에는 대상 가상 기기와 이유 코드가 포함되는 것입니다. 이 탐지기는 실제 회수 API를 호출하거나 기기 권한을 바꾸지 않습니다. 명령 통과는 운영 엔진의 사건 전달·실제 회수·심판 판정을 증명하지 않으며, 실제 회수 여부와 시간은 심판이 확인합니다.
 
 제출 묶음은 저장소 상태가 깨끗하고 변경이 커밋된 뒤 `npm run bundle`로 만듭니다. 이 명령은 자체 점검 결과와 요약을 출력하며, 생성되는 `bundle-notes.json`과 `artifacts/submission.json`은 커밋하지 마세요. 자체 점검은 가상 요청 판정이지 심판이나 실제 접속 결과가 아닙니다.
 
