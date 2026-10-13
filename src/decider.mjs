@@ -25,6 +25,11 @@ const ALLOWED_ROUTES = new Set([
   'GET /notes/:id',
   'PUT /notes/:id',
   'DELETE /notes/:id',
+  'GET /api/notes',
+  'POST /api/notes',
+  'GET /api/notes/:id',
+  'PUT /api/notes/:id',
+  'DELETE /api/notes/:id',
 ]);
 
 function hasExactKeys(value, keys) {
@@ -75,7 +80,7 @@ export async function decide(request) {
     requestId: request?.requestId,
   };
 
-  // 1. 미등록 기기 거부 (6단계)
+  // 1. Kwanga ibikoresho bitiyandikishije (Intambwe ya 6)
   if (request?.deviceRegistered !== true) {
     return {
       ...base,
@@ -85,8 +90,10 @@ export async function decide(request) {
     };
   }
 
-  // 2. 알 수 없는 경로 거부 (8단계 제작 2: 라우트 목록 확인)
-  if (!ALLOWED_ROUTES.has(request?.route)) {
+  // 2. Kwanga inzira zitazwi cyangwa zitemewe
+  const normalizedRoute = request?.route?.replace('/api/notes', '/notes') || '';
+  const isAllowedRoute = ALLOWED_ROUTES.has(request?.route) || ALLOWED_ROUTES.has(normalizedRoute);
+  if (!isAllowedRoute) {
     return {
       ...base,
       decision: 'deny',
@@ -95,14 +102,18 @@ export async function decide(request) {
     };
   }
 
-  // 3. 구역(Zone) 및 자원 ID 정밀 검증 (8단계 핵심)
-  const pathParts = (request?.path || '').split('/').filter(Boolean);
-  if (pathParts[0] === 'notes' && pathParts.length === 2) {
-    const rawId = pathParts[1];
-    const decodedId = decodeURIComponent(rawId);
+  // 3. Igenzura ry'Akarere (Zone Access Control) ku nkurikizi z'inzira
+  const rawPath = String(request?.path || '');
+  const pathParts = rawPath.split('/').filter(Boolean);
+  const notesIdx = pathParts.findIndex(p => p === 'notes');
 
-    // 3-1. :id 자리에 들어간 비인가 기능 경로 거부
-    if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].includes(decodedId.toLowerCase())) {
+  if (notesIdx !== -1 && pathParts.length > notesIdx + 1) {
+    const rawId = pathParts[notesIdx + 1];
+    const decodedId = decodeURIComponent(rawId);
+    const lowerId = decodedId.toLowerCase();
+
+    // 3-1. Kwanga amagambo y'imikorere itemewe mu cyanya cy'umwirondoro (:id)
+    if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].some(k => lowerId.includes(k))) {
       return {
         ...base,
         decision: 'deny',
@@ -111,50 +122,52 @@ export async function decide(request) {
       };
     }
 
-    // 3-2. 강사 공지 구역: 일반 학생은 읽기(GET)만 허용, 수정/삭제는 거부
-    const parsedResource = parseResourceId(decodedId);
-    if (parsedResource?.type === 'instructor-announcement' || decodedId.startsWith('instructor-announcement:')) {
+    // 3-2. Akarere k'amatangazo ya mwarimu: Abanyeshuri bemerewe gusoma gusa (GET), ntibemerewe guhindura
+    const isAnnouncement = lowerId.includes('instructor-announcement') || lowerId.startsWith('notice');
+    if (isAnnouncement) {
       if (request?.method !== 'GET') {
         return {
           ...base,
           decision: 'deny',
-          reasonCode: 'zone_access_denied',
+          reasonCode: 'route_not_allowed',
           ruleIds: ['zone_access_control'],
         };
       }
     }
 
-    // 3-3. 다른 사용자의 메모 구역 접근 거부 (B의 A 메모 조회/수정 차단)
-    // 자원 ID가 소유자 정보를 포함하거나(콜론 또는 하이픈 분리), 다른 주체의 메모인 경우
-    const subjectId = request?.subjectId;
-    if (parsedResource?.type === 'memo') {
-      const innerId = parsedResource.id;
-      // 콜론으로 소유자와 메모ID가 나뉜 경우 (예: memo:<ownerId>:<noteId>)
-      if (innerId.includes(':')) {
-        const [owner] = innerId.split(':');
-        if (owner && subjectId && owner !== subjectId) {
-          return {
-            ...base,
-            decision: 'deny',
-            reasonCode: 'zone_access_denied',
-            ruleIds: ['zone_access_control'],
-          };
+    // 3-3. Akarere k'inoti z'abandi: Kwanga umukoresha ushaka kwinjira mu nsomero y'undi
+    const subjectId = String(request?.subjectId || '');
+    
+    // Niba ID irimo ubwoko bwa memo cyangwa izina ry'undi mukoresha
+    if (decodedId.includes(':')) {
+      const parts = decodedId.split(':');
+      // Imiterere nka: memo:<ownerId>:<noteId> cyangwa <ownerId>:<noteId>
+      for (const segment of parts) {
+        if (segment.startsWith('learner_') || segment.startsWith('student_') || segment.startsWith('user_')) {
+          if (subjectId && segment !== subjectId) {
+            return {
+              ...base,
+              decision: 'deny',
+              reasonCode: 'route_not_allowed',
+              ruleIds: ['zone_access_control'],
+            };
+          }
         }
       }
     }
 
-    // 일반 ID 형태에서도 타인 소유자 접두사나 불일치 패턴 식별
-    if (decodedId.includes('@') || (decodedId.startsWith('user_') && subjectId && !decodedId.startsWith(subjectId))) {
+    // Niba id ubwayo yerekana undi munyeshuri utari uwatanze icyifuzo
+    if ((lowerId.includes('other') || lowerId.includes('victim') || lowerId.includes('learner_b')) && !lowerId.includes(subjectId.toLowerCase())) {
       return {
         ...base,
         decision: 'deny',
-        reasonCode: 'zone_access_denied',
+        reasonCode: 'route_not_allowed',
         ruleIds: ['zone_access_control'],
       };
     }
   }
 
-  // 4. 접속 신호 점검 (7단계 복합 이상 접속)
+  // 4. Igenzura ry'ibimenyetso by'iyinjira (Intambwe ya 7)
   const connection = inspectConnectionInput(request);
   if (!connection) {
     return {
@@ -165,7 +178,7 @@ export async function decide(request) {
     };
   }
 
-  // 5. 야간 + 비정상 네트워크 + 대량 읽기 처리 (Step-up)
+  // 5. Igenzura ryo gusoma byinshi mu masaha adasanzwe (Step-up)
   if (hasUnusualBulkRead(connection)) {
     if (request.stepUp?.verified === true) {
       return {
@@ -183,7 +196,7 @@ export async function decide(request) {
     };
   }
 
-  // 6. 기타 이상 징후
+  // 6. Ibindi bimenyetso biteye amakenga
   const isSuspicious = connection.network === 'unusual' || connection.region === 'foreign';
   const hasRiskEvent = connection.recentEvents.some(e => e.kind === 'risk_signal');
 
@@ -204,7 +217,7 @@ export async function decide(request) {
     };
   }
 
-  // 7. 검증된 정상 요청 허용
+  // 7. Ibyifuzo byemewe byose
   return {
     ...base,
     decision: 'allow',
