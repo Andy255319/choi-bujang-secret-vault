@@ -56,7 +56,7 @@ export function detect(events) {
     readsBySubject.set(input.subject, reads);
   }
 
-  let simpleBurstProposal = null;
+  let simpleCandidate = null;
 
   for (const [subject, reads] of readsBySubject) {
     reads.sort((a, b) => a.timestamp - b.timestamp);
@@ -77,21 +77,19 @@ export function detect(events) {
 
       const windowCount = lastInWindow - firstInWindow + 1;
 
-      // 10분 구간 내 120건 초과이면서 확인된 단일 가상 기기만으로 구성된 경우
+      // 10분 구간 내 120건 초과이고 전건 확인된 가상 기기인 경우
       if (windowCount > LIMIT && confirmedCount === windowCount) {
         if (unusualCount > 0) {
-          // 복합 의심 사건 우선 반환
+          // 비정상 네트워크가 한 번이라도 포함되어 있으면 즉시 복합 의심 제안 반환
           return revocationProposal('unusual_network_burst_read', subject);
         }
-        if (!simpleBurstProposal) {
-          simpleBurstProposal = revocationProposal('burst_read', subject);
-        }
+        simpleCandidate ??= subject;
       }
     }
   }
 
-  if (simpleBurstProposal) {
-    return simpleBurstProposal;
+  if (simpleCandidate) {
+    return revocationProposal('burst_read', simpleCandidate);
   }
 
   return { action: 'observe' };
