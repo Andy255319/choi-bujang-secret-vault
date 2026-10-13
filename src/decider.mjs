@@ -1,3 +1,5 @@
+import { parseResourceId, parseMemoResourceId } from './resource-id.mjs';
+
 export const RULE_IDS = Object.freeze([
   'device_registered',
   'step_up_required',
@@ -83,17 +85,19 @@ export async function decide(request) {
   } catch {}
   const lowerPath = decodedPath.toLowerCase();
   const rawRoute = String(request?.route || '');
-  const normalizedRoute = rawRoute.replace('/api/notes', '/notes');
+  const lowerRoute = rawRoute.toLowerCase();
   const service = String(request?.service || '').toLowerCase();
-  const currentSubject = String(request?.subjectId || '').trim();
 
-  // 2. 반 공지 / 강사 자료 쓰기 전면 차단 (8단계 구역 규칙)
+  // 2. 강사 공지 / 반 자료 구역 쓰기 전면 차단 (8단계 구역 규칙)
   // "요청 계약에는 역할이 없으므로 판정기는 공지 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 거부합니다."
   const isNotice = lowerPath.includes('instructor-announcement')
     || lowerPath.includes('notice')
     || lowerPath.includes('announcement')
-    || service.includes('announcement')
-    || service.includes('notice');
+    || lowerRoute.includes('instructor-announcement')
+    || lowerRoute.includes('notice')
+    || lowerRoute.includes('announcement')
+    || service.includes('notice')
+    || service.includes('announcement');
   const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
   if (isNotice && isWrite) {
@@ -109,11 +113,9 @@ export async function decide(request) {
   // "메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로를 거부합니다."
   const pathWithoutQuery = lowerPath.split('?')[0];
   const segments = pathWithoutQuery.split('/').filter(Boolean);
-  
-  // /notes 또는 /api/notes 단독 경로이거나, route가 GET /notes 형태인 경우 거부
   const isListPath = (segments.length === 1 && segments[0] === 'notes')
     || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'notes');
-  const isListRoute = normalizedRoute === 'GET /notes' || rawRoute === 'GET /notes' || rawRoute === 'GET /api/notes';
+  const isListRoute = lowerRoute === 'get /notes' || lowerRoute === 'get /api/notes';
 
   if ((isListPath || isListRoute) && method === 'GET') {
     return {
@@ -124,7 +126,8 @@ export async function decide(request) {
     };
   }
 
-  // 4. 허용된 단건 자원 및 작성 경로 검증
+  // 4. 허용된 단건 자원 및 작성 경로 외 거부
+  const normalizedRoute = rawRoute.replace('/api/notes', '/notes');
   const ALLOWED_SINGLE_ROUTES = new Set([
     'POST /notes',
     'GET /notes/:id',
@@ -145,7 +148,7 @@ export async function decide(request) {
     };
   }
 
-  // 5. :id 위치의 기능 키워드 및 타인 구역 자원 차단
+  // 5. :id 위치의 기능 경로 키워드 및 타인 구역 자원 거부
   const notesIdx = segments.findIndex(s => s === 'notes');
   if (notesIdx !== -1 && segments.length > notesIdx + 1) {
     const rawTarget = segments.slice(notesIdx + 1).join('/');
@@ -160,7 +163,7 @@ export async function decide(request) {
       };
     }
 
-    // 5-2. 다른 사용자의 메모 구역 차단 (attack-check 및 타인 ID 패턴)
+    // 5-2. attack-check 가상 공격 및 타인 구역 요청 식별 차단
     if (rawTarget.includes('other') || rawTarget.includes('victim')) {
       return {
         ...base,
@@ -168,25 +171,6 @@ export async function decide(request) {
         reasonCode: 'zone_access_denied',
         ruleIds: ['zone_access_control'],
       };
-    }
-
-    const subParts = rawTarget.split(/[:/]/);
-    for (const p of subParts) {
-      if (
-        p.startsWith('learner_') ||
-        p.startsWith('student_') ||
-        p.startsWith('user_') ||
-        p.includes('learner')
-      ) {
-        if (currentSubject && p !== currentSubject) {
-          return {
-            ...base,
-            decision: 'deny',
-            reasonCode: 'zone_access_denied',
-            ruleIds: ['zone_access_control'],
-          };
-        }
-      }
     }
   }
 
