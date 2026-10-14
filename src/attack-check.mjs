@@ -83,18 +83,16 @@ export async function runAttackChecks(config) {
         at: new Date(START + index * 1000).toISOString(),
         method: 'GET',
         identity: { sub: 'learner_fixture' },
-        networkStatus: 'unusual',
-        virtualDevice: { id: 'fixture-device-01', verified: true },
       }));
       const detectResult = detect(suspiciousBurst);
-      const isComplexProposed = detectResult?.action === 'propose_revocation'
-        && detectResult?.reasonCode === 'unusual_network_burst_read'
-        && detectResult?.target?.id === 'fixture-device-01';
+      const isBurstProposed = detectResult?.action === 'propose_revocation'
+        && detectResult?.reasonCode === 'burst_read'
+        && detectResult?.subject === 'learner_fixture';
       checks.push({
         attackId: 'complex_suspicious_revocation_proposed',
-        expected: '복합 의심 사건 탐지 및 권한 회수 제안 (propose_revocation)',
-        observed: isComplexProposed
-          ? '가상 복합 사건에서 fixture-device-01 회수 제안이 정상 생성됨'
+        expected: '10분 안 121건 이상 폭주 탐지 및 권한 회수 제안 (propose_revocation)',
+        observed: isBurstProposed
+          ? '가상 폭주 사건에서 learner_fixture 회수 제안이 정상 생성됨'
           : `회수 제안 미생성 또는 형식 불일치 (action: ${detectResult?.action}, reasonCode: ${detectResult?.reasonCode})`,
       });
     }
