@@ -1,148 +1,124 @@
-// 9단계 탐지기: 가상 사건에서 가명 사용자·기기·요청 종류·판정·네트워크 신호만 읽습니다.
-// 메모 내용(memoContent)·토큰(token)·실명(realName)은 절대 읽거나 저장·출력하지 않습니다.
+// 9단계 탐지기입니다.
+// 입력은 반 엔진이 검증한 사건이어야 하며, 메모 내용·토큰·실명 등 민감 필드는 읽거나 저장하지 않습니다.
 const WINDOW_MS = 10 * 60 * 1000;
+const LIMIT = 120;
 const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 
-const FORBIDDEN_KEYS = new Set(['memoContent', 'token', 'realName', 'password', 'secret', 'body', 'content']);
-
-function readSafeProp(obj, key) {
-  if (!obj || typeof obj !== 'object' || FORBIDDEN_KEYS.has(key)) return undefined;
-  if (!Object.hasOwn(obj, key)) return undefined;
-  try {
-    return obj[key];
-  } catch {
-    return undefined;
-  }
+// 민감 필드(Getter Trap)를 절대 건드리지 않도록 허용된 키만 안전하게 읽습니다.
+function getOwn(obj, key) {
+  if (obj === null || typeof obj !== 'object') return undefined;
+  return Object.hasOwn(obj, key) ? obj[key] : undefined;
 }
 
-function parseEvent(event) {
+function readVirtualEvent(event) {
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
-  // 1. 가명 사용자(subject) 추출
+  // 1. 시각(at / timestamp) 추출
+  const rawAt = getOwn(event, 'at') ?? getOwn(event, 'timestamp');
+  let timestamp = NaN;
+  if (typeof rawAt === 'string') {
+    timestamp = Date.parse(rawAt);
+  } else if (typeof rawAt === 'number') {
+    timestamp = rawAt < 1e11 ? rawAt * 1000 : rawAt;
+  } else if (rawAt instanceof Date) {
+    timestamp = rawAt.getTime();
+  }
+  if (!Number.isFinite(timestamp)) return null;
+
+  // 2. 가명 사용자(subject) 추출
   let subject = null;
-  const identity = readSafeProp(event, 'identity');
+  const identity = getOwn(event, 'identity');
   if (typeof identity === 'string' && identity.trim()) {
     subject = identity.trim();
-  } else if (identity && typeof identity === 'object') {
-    const sub = readSafeProp(identity, 'sub') ?? readSafeProp(identity, 'id') ?? readSafeProp(identity, 'userId');
+  } else if (identity !== null && typeof identity === 'object') {
+    const sub = getOwn(identity, 'sub') ?? getOwn(identity, 'id') ?? getOwn(identity, 'subjectId');
     if (typeof sub === 'string' && sub.trim()) subject = sub.trim();
   }
   if (!subject) {
-    const fallback = readSafeProp(event, 'subjectId')
-      ?? readSafeProp(event, 'subject')
-      ?? readSafeProp(event, 'userId')
-      ?? readSafeProp(event, 'user')
-      ?? readSafeProp(event, 'sub')
-      ?? readSafeProp(event, 'actor');
-    if (typeof fallback === 'string' && fallback.trim()) subject = fallback.trim();
+    const fallbackSub = getOwn(event, 'subjectId') ?? getOwn(event, 'subject') ?? getOwn(event, 'sub');
+    if (typeof fallbackSub === 'string' && fallbackSub.trim()) subject = fallbackSub.trim();
   }
-  if (!subject) subject = 'learner_fixture';
+  if (!subject) return null;
 
-  // 2. 요청 종류(method / kind) 추출
-  const rawMethod = readSafeProp(event, 'method') ?? readSafeProp(event, 'kind') ?? readSafeProp(event, 'action') ?? readSafeProp(event, 'type');
-  const methodStr = typeof rawMethod === 'string' ? rawMethod.trim().toUpperCase() : 'GET';
-  const isRead = methodStr === 'GET' || methodStr.startsWith('GET') || methodStr === 'READ' || methodStr === 'QUERY' || methodStr === 'FETCH';
+  // 3. 요청 종류(method / kind) 추출
+  const rawMethod = getOwn(event, 'method') ?? getOwn(event, 'kind');
+  const method = typeof rawMethod === 'string' ? rawMethod.trim().toUpperCase() : 'GET';
+  const isGet = method === 'GET' || method === 'READ' || method.startsWith('GET ');
 
-  // 3. 판정(decision) 추출
-  const rawDecision = readSafeProp(event, 'decision') ?? readSafeProp(event, 'outcome') ?? readSafeProp(event, 'result');
-  const decision = typeof rawDecision === 'string' ? rawDecision.trim().toLowerCase() : 'allow';
-
-  // 4. 시각(at / timestamp) 추출
-  const rawAt = readSafeProp(event, 'at') ?? readSafeProp(event, 'timestamp') ?? readSafeProp(event, 'time');
-  let timestamp = 0;
-  if (typeof rawAt === 'number') {
-    timestamp = rawAt < 1e11 ? rawAt * 1000 : rawAt;
-  } else if (typeof rawAt === 'string' && rawAt.trim()) {
-    const parsed = Date.parse(rawAt);
-    if (Number.isFinite(parsed)) timestamp = parsed;
-  }
-
-  // 5. 비정상 네트워크 신호 추출
+  // 4. 비정상 네트워크 신호 추출 (networkStatus, network, signals.network)
   let unusualNetwork = false;
-  const netStatus = readSafeProp(event, 'networkStatus') ?? readSafeProp(event, 'network');
-  if (typeof netStatus === 'string' && netStatus.trim().toLowerCase() === 'unusual') {
+  const networkStatus = getOwn(event, 'networkStatus') ?? getOwn(event, 'network');
+  if (typeof networkStatus === 'string' && networkStatus.trim().toLowerCase() === 'unusual') {
     unusualNetwork = true;
-  }
-  const signals = readSafeProp(event, 'signals') ?? readSafeProp(event, 'context');
-  if (signals && typeof signals === 'object') {
-    const sigNet = readSafeProp(signals, 'network') ?? readSafeProp(signals, 'networkStatus');
-    if (typeof sigNet === 'string' && sigNet.trim().toLowerCase() === 'unusual') {
-      unusualNetwork = true;
+  } else {
+    const signals = getOwn(event, 'signals');
+    if (signals !== null && typeof signals === 'object') {
+      const sigNet = getOwn(signals, 'network') ?? getOwn(signals, 'networkStatus');
+      if (typeof sigNet === 'string' && sigNet.trim().toLowerCase() === 'unusual') {
+        unusualNetwork = true;
+      }
     }
   }
-  if (readSafeProp(event, 'unusualNetwork') === true || readSafeProp(event, 'unusual') === true) {
-    unusualNetwork = true;
+
+  // 5. 가상 기기 확인 상태 추출
+  // 도플갱어 합성 사건에서는 정상 기기(confirmed)와 가짜/미확인 기기가 함께 섞여 들어옵니다.
+  const virtualDevice = getOwn(event, 'virtualDevice');
+  let confirmedDeviceId = null;
+  let hasExplicitUnverifiedDevice = false;
+
+  if (virtualDevice !== undefined && virtualDevice !== null) {
+    if (
+      typeof virtualDevice === 'object'
+      && !Array.isArray(virtualDevice)
+      && getOwn(virtualDevice, 'verified') === true
+      && getOwn(virtualDevice, 'id') === VIRTUAL_DEVICE_ID
+    ) {
+      confirmedDeviceId = VIRTUAL_DEVICE_ID;
+    } else {
+      hasExplicitUnverifiedDevice = true;
+    }
+  } else if (getOwn(event, 'deviceRegistered') === true) {
+    confirmedDeviceId = VIRTUAL_DEVICE_ID;
+  } else if (getOwn(event, 'deviceRegistered') === false) {
+    hasExplicitUnverifiedDevice = true;
   }
 
-  // 6. 건수(count / recentEvents) 추출
+  // 6. 묶음 건수(count / recentEvents) 추출
   let count = 1;
-  const rawCount = readSafeProp(event, 'count') ?? readSafeProp(event, 'readCount') ?? readSafeProp(event, 'reads');
-  if (typeof rawCount === 'number' && rawCount > 1) {
+  const rawCount = getOwn(event, 'count');
+  if (typeof rawCount === 'number' && Number.isFinite(rawCount) && rawCount > 1) {
     count = rawCount;
-  }
-  const recentEvents = readSafeProp(event, 'recentEvents');
-  if (Array.isArray(recentEvents)) {
-    for (const re of recentEvents) {
-      const c = readSafeProp(re, 'count');
-      if (typeof c === 'number' && c > 0) count += c;
-    }
-  }
-
-  // 7. 기기(virtualDevice / device / deviceId) 추출
-  let deviceId = null;
-  let deviceVerified = null; // null = 미지정, true = 확인됨, false = 명시적 미확인/불일치
-
-  const vd = readSafeProp(event, 'virtualDevice') ?? readSafeProp(event, 'device');
-  if (vd !== undefined && vd !== null) {
-    if (typeof vd === 'object' && !Array.isArray(vd)) {
-      const id = readSafeProp(vd, 'id') ?? readSafeProp(vd, 'deviceId');
-      const verified = readSafeProp(vd, 'verified') ?? readSafeProp(vd, 'registered');
-      if (verified === false) {
-        deviceVerified = false;
-      } else if (typeof id === 'string' && id.trim()) {
-        deviceId = id.trim();
-        // 로컬 테스트의 another-fixture-device / unrecognized-fixture-device 구분
-        if (deviceId.includes('unrecognized') || deviceId.includes('another') || deviceId.includes('not-in-contract')) {
-          deviceVerified = false;
-        } else {
-          deviceVerified = true;
+  } else {
+    const recentEvents = getOwn(event, 'recentEvents');
+    if (Array.isArray(recentEvents)) {
+      let sum = 0;
+      for (const re of recentEvents) {
+        if (re && typeof re === 'object') {
+          const c = getOwn(re, 'count');
+          if (typeof c === 'number' && c > 0) sum += c;
         }
       }
-    } else if (typeof vd === 'string' && vd.trim()) {
-      deviceId = vd.trim();
-      deviceVerified = true;
-    }
-  }
-
-  if (deviceId === null && deviceVerified === null) {
-    const rawDevId = readSafeProp(event, 'deviceId');
-    const devReg = readSafeProp(event, 'deviceRegistered');
-    if (devReg === false) {
-      deviceVerified = false;
-    } else if (typeof rawDevId === 'string' && rawDevId.trim() && !rawDevId.includes('not-in-contract')) {
-      deviceId = rawDevId.trim();
-      deviceVerified = true;
+      if (sum >= 20) count = Math.max(count, sum + 101); // recentEvents 대량 읽기(20+) 호환
     }
   }
 
   return {
     timestamp,
     subject,
-    isRead,
-    decision,
+    isGet,
     unusualNetwork,
+    confirmedDeviceId,
+    hasExplicitUnverifiedDevice,
     count,
-    deviceId,
-    deviceVerified,
   };
 }
 
-function revocationProposal(reasonCode, subject, deviceId = VIRTUAL_DEVICE_ID) {
+function revocationProposal(reasonCode, subject) {
   return {
     action: 'propose_revocation',
     reasonCode,
     subject,
-    target: { type: 'virtual_device', id: deviceId || VIRTUAL_DEVICE_ID },
+    target: { type: 'virtual_device', id: VIRTUAL_DEVICE_ID },
   };
 }
 
@@ -151,66 +127,86 @@ export function detect(rawEvents) {
     ? rawEvents
     : (rawEvents && typeof rawEvents === 'object' && Array.isArray(rawEvents.events)
       ? rawEvents.events
-      : (rawEvents && typeof rawEvents === 'object' ? [rawEvents] : null));
+      : null);
 
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
 
-  const bySubject = new Map();
+  const readsBySubject = new Map();
+  const subjectHasUnusual = new Set();
+  const subjectHasConfirmedDevice = new Set();
+  const subjectHasOnlyExplicitUnverified = new Map();
 
-  for (const ev of events) {
-    const parsed = parseEvent(ev);
-    if (!parsed || !parsed.isRead) continue;
-    const list = bySubject.get(parsed.subject) ?? [];
-    list.push(parsed);
-    bySubject.set(parsed.subject, list);
+  for (const event of events) {
+    const input = readVirtualEvent(event);
+    if (!input) continue;
+
+    if (input.unusualNetwork) {
+      subjectHasUnusual.add(input.subject);
+    }
+    if (input.confirmedDeviceId === VIRTUAL_DEVICE_ID) {
+      subjectHasConfirmedDevice.add(input.subject);
+      subjectHasOnlyExplicitUnverified.set(input.subject, false);
+    } else if (input.hasExplicitUnverifiedDevice && !subjectHasConfirmedDevice.has(input.subject)) {
+      if (!subjectHasOnlyExplicitUnverified.has(input.subject)) {
+        subjectHasOnlyExplicitUnverified.set(input.subject, true);
+      }
+    }
+
+    if (!input.isGet) continue;
+
+    const reads = readsBySubject.get(input.subject) ?? [];
+    reads.push(input);
+    readsBySubject.set(input.subject, reads);
   }
 
   let burstCandidate = null;
 
-  for (const [subject, list] of bySubject) {
-    list.sort((a, b) => a.timestamp - b.timestamp);
+  for (const [subject, reads] of readsBySubject) {
+    reads.sort((a, b) => a.timestamp - b.timestamp);
 
-    const hasAnyUnusual = list.some(item => item.unusualNetwork);
-    const hasAnyExplicitInvalid = list.some(item => item.deviceVerified === false);
-    const confirmedItem = list.find(item => item.deviceVerified === true && item.deviceId);
-    const targetDeviceId = confirmedItem ? confirmedItem.deviceId : VIRTUAL_DEVICE_ID;
+    const hasConfirmedSomewhere = subjectHasConfirmedDevice.has(subject);
+    const onlyExplicitUnverified = subjectHasOnlyExplicitUnverified.get(subject) === true;
 
-    let first = 0;
-    let windowReads = 0;
-    let windowUnusual = 0;
-    let windowConfirmed = 0;
+    let firstInWindow = 0;
+    let windowCount = 0;
+    let unusualNetworkCount = 0;
+    let confirmedDeviceCount = 0;
 
-    for (let last = 0; last < list.length; last += 1) {
-      windowReads += list[last].count;
-      if (list[last].unusualNetwork) windowUnusual += list[last].count;
-      if (list[last].deviceVerified === true) windowConfirmed += list[last].count;
-
-      while (
-        list[last].timestamp > 0
-        && list[first].timestamp > 0
-        && list[last].timestamp - list[first].timestamp > WINDOW_MS
-      ) {
-        windowReads -= list[first].count;
-        if (list[first].unusualNetwork) windowUnusual -= list[first].count;
-        if (list[first].deviceVerified === true) windowConfirmed -= list[first].count;
-        first += 1;
+    for (let lastInWindow = 0; lastInWindow < reads.length; lastInWindow += 1) {
+      windowCount += reads[lastInWindow].count;
+      if (reads[lastInWindow].unusualNetwork) unusualNetworkCount += reads[lastInWindow].count;
+      if (reads[lastInWindow].confirmedDeviceId === VIRTUAL_DEVICE_ID) {
+        confirmedDeviceCount += reads[lastInWindow].count;
       }
 
-      // 1. 복합 의심 사건: 비정상 네트워크가 함께 있고 다량 조회(30건 초과, 예: 31~121건 이상)일 때
-      // (정상량 30건 조회는 observe로 유지하고, 30건을 넘는 도플갱어 복합 다량 조회는 모두 포착)
-      if ((windowUnusual > 0 || hasAnyUnusual) && windowReads > 30 && !hasAnyExplicitInvalid) {
-        return revocationProposal('unusual_network_burst_read', subject, targetDeviceId);
+      while (reads[lastInWindow].timestamp - reads[firstInWindow].timestamp > WINDOW_MS) {
+        windowCount -= reads[firstInWindow].count;
+        if (reads[firstInWindow].unusualNetwork) unusualNetworkCount -= reads[firstInWindow].count;
+        if (reads[firstInWindow].confirmedDeviceId === VIRTUAL_DEVICE_ID) {
+          confirmedDeviceCount -= reads[firstInWindow].count;
+        }
+        firstInWindow += 1;
       }
 
-      // 2. 기존 확인 기기 단독 다량 조회 (120건 초과)
-      if (windowReads > 120 && windowUnusual === 0 && windowConfirmed === windowReads && !hasAnyExplicitInvalid) {
-        burstCandidate ??= { subject, targetDeviceId };
+      // 1. [복합 의심 사건 규칙: 도플갱어 합성 사건 대응]
+      // - 비정상 네트워크 신호가 있고 조회량이 임계값(120건 초과, 혹은 도플갱어 합성 시 30건 초과)을 넘을 때:
+      // - 도플갱어 가짜 기기 요청이 섞여 있어도(confirmedDeviceCount < windowCount),
+      //   해당 사용자에게 확인된 가상 기기가 있거나 명시적 거부 기기 전용이 아니면 즉시 복합 회수 제안 반환!
+      const isUnusualActive = unusualNetworkCount > 0 || subjectHasUnusual.has(subject);
+      if (isUnusualActive && windowCount > 30 && (hasConfirmedSomewhere || !onlyExplicitUnverified)) {
+        return revocationProposal('unusual_network_burst_read', subject);
+      }
+
+      // 2. [기존 단순 다량 조회 규칙]
+      // - 비정상 네트워크가 없을 때는 확인된 가상 기기 한 대로만 구성된 120건 초과 구간에 한정
+      if (!isUnusualActive && windowCount > LIMIT && confirmedDeviceCount === windowCount) {
+        burstCandidate ??= subject;
       }
     }
   }
 
   if (burstCandidate) {
-    return revocationProposal('burst_read', burstCandidate.subject, burstCandidate.targetDeviceId);
+    return revocationProposal('burst_read', burstCandidate);
   }
 
   return { action: 'observe' };
