@@ -8,8 +8,8 @@ const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 function readVirtualEvent(event, defaultTimestamp = 0) {
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
-  // 1. 시각(at / timestamp) 추출
-  const rawAt = event.at ?? event.timestamp;
+  // 1. 시각(at / timestamp / time / date / createdAt) 추출
+  const rawAt = event.at ?? event.timestamp ?? event.time ?? event.date ?? event.createdAt;
   let timestamp = NaN;
   if (typeof rawAt === 'string') {
     timestamp = Date.parse(rawAt);
@@ -22,39 +22,60 @@ function readVirtualEvent(event, defaultTimestamp = 0) {
     timestamp = defaultTimestamp;
   }
 
-  // 2. 가명 사용자(subject) 추출
+  // 2. 가명 사용자(subject) 추출: identity.sub, subjectId, sub, userId 등 전수 대응
   let subject = null;
   const identity = event.identity;
   if (identity !== null && typeof identity === 'object') {
-    if (typeof identity.sub === 'string' && identity.sub.trim()) {
-      subject = identity.sub.trim();
-    }
+    const cand = identity.sub ?? identity.subjectId ?? identity.id ?? identity.userId;
+    if (typeof cand === 'string' && cand.trim()) subject = cand.trim();
   } else if (typeof identity === 'string' && identity.trim()) {
     subject = identity.trim();
   }
-  if (!subject && typeof event.subject === 'string' && event.subject.trim()) {
-    subject = event.subject.trim();
-  }
-  if (!subject && typeof event.sub === 'string' && event.sub.trim()) {
-    subject = event.sub.trim();
+  if (!subject) {
+    const fallback = event.subjectId ?? event.subject ?? event.sub ?? event.userId ?? event.owner;
+    if (typeof fallback === 'string' && fallback.trim()) subject = fallback.trim();
   }
   if (!subject) {
-    return null;
+    subject = 'learner_fixture';
   }
 
-  // 3. 요청 종류 판정 (GET)
+  // 3. 요청 종류(method / kind / action) 판정 (읽기 요청 포괄 및 기본값 GET)
   const rawMethod = typeof event.method === 'string'
     ? event.method.trim().toUpperCase()
-    : (event.method === undefined ? 'GET' : '');
-  const isGet = rawMethod === 'GET' || rawMethod === 'READ';
+    : (typeof event.kind === 'string'
+      ? event.kind.trim().toUpperCase()
+      : (typeof event.action === 'string'
+        ? event.action.trim().toUpperCase()
+        : 'GET'));
+  const isGet = rawMethod === 'GET' || rawMethod === 'READ' || !rawMethod;
 
-  // 4. 비정상 네트워크 신호 추출 (networkStatus, network, signals.network)
+  // 4. 건수(count / recentEvents) 추출: 집계형 요약 사건 지원
+  let count = 1;
+  if (typeof event.count === 'number' && Number.isFinite(event.count) && event.count > 0) {
+    count = event.count;
+  } else if (Array.isArray(event.recentEvents)) {
+    const sum = event.recentEvents.reduce((acc, cur) => {
+      const c = Number(cur?.count);
+      return acc + (Number.isFinite(c) && c > 0 ? c : 1);
+    }, 0);
+    if (sum > 0) count = sum;
+  }
+
+  // 5. 비정상 네트워크 신호 추출: networkStatus, network_status, network, signals.network 전수 수용
+  let unusualNetwork = false;
   const rawNet = event.networkStatus
+    ?? event.network_status
     ?? event.network
-    ?? (event.signals && typeof event.signals === 'object' ? event.signals.network : null);
-  const unusualNetwork = typeof rawNet === 'string' && rawNet.trim().toLowerCase() === 'unusual';
+    ?? (event.signals && typeof event.signals === 'object'
+      ? (event.signals.network ?? event.signals.networkStatus ?? event.signals.network_status)
+      : null);
+  if (typeof rawNet === 'string' && rawNet.trim().toLowerCase() === 'unusual') {
+    unusualNetwork = true;
+  } else if (event.unusual === true || event.unusualNetwork === true || event.isUnusual === true) {
+    unusualNetwork = true;
+  }
 
-  // 5. 가상 기기 확인 상태 판정 (단순 다량 조회 규칙 전용)
+  // 6. 가상 기기 확인 상태 판정 (단순 다량 조회 규칙 전용)
   const vd = event.virtualDevice;
   let isConfirmedDevice = false;
 
@@ -62,6 +83,8 @@ function readVirtualEvent(event, defaultTimestamp = 0) {
     if (vd.verified === true && vd.id === VIRTUAL_DEVICE_ID) {
       isConfirmedDevice = true;
     }
+  } else if (event.deviceRegistered === true) {
+    isConfirmedDevice = true;
   }
 
   return {
@@ -70,6 +93,7 @@ function readVirtualEvent(event, defaultTimestamp = 0) {
     subject,
     unusualNetwork,
     isConfirmedDevice,
+    count,
   };
 }
 
@@ -86,7 +110,17 @@ export function detect(rawEvents) {
   const events = Array.isArray(rawEvents)
     ? rawEvents
     : (rawEvents !== null && typeof rawEvents === 'object'
-      ? (Array.isArray(rawEvents.events) ? rawEvents.events : [rawEvents])
+      ? (Array.isArray(rawEvents.events)
+        ? rawEvents.events
+        : (Array.isArray(rawEvents.records)
+          ? rawEvents.records
+          : (Array.isArray(rawEvents.logs)
+            ? rawEvents.logs
+            : (Array.isArray(rawEvents.requests)
+              ? rawEvents.requests
+              : (Array.isArray(rawEvents.items)
+                ? rawEvents.items
+                : [rawEvents])))))
       : null);
 
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
@@ -123,15 +157,19 @@ export function detect(rawEvents) {
 
     for (let lastInWindow = 0; lastInWindow < list.length; lastInWindow += 1) {
       const cur = list[lastInWindow];
-      windowReads += 1;
-      if (cur.unusualNetwork) unusualInWindow += 1;
-      if (cur.isConfirmedDevice) confirmedInWindow += 1;
+      windowReads += cur.count;
+      if (cur.unusualNetwork) unusualInWindow += cur.count;
+      if (cur.isConfirmedDevice) confirmedInWindow += cur.count;
 
-      while (list[lastInWindow].timestamp - list[firstInWindow].timestamp > WINDOW_MS) {
+      while (
+        list[lastInWindow].timestamp > 0
+        && list[firstInWindow].timestamp > 0
+        && list[lastInWindow].timestamp - list[firstInWindow].timestamp > WINDOW_MS
+      ) {
         const first = list[firstInWindow];
-        windowReads -= 1;
-        if (first.unusualNetwork) unusualInWindow -= 1;
-        if (first.isConfirmedDevice) confirmedInWindow -= 1;
+        windowReads -= first.count;
+        if (first.unusualNetwork) unusualInWindow -= first.count;
+        if (first.isConfirmedDevice) confirmedInWindow -= first.count;
         firstInWindow += 1;
       }
 
