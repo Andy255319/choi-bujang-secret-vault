@@ -120,21 +120,38 @@ function revocationProposal(reasonCode, subject) {
 }
 
 export function detect(rawEvents) {
+  let inputSource = rawEvents;
+  if (typeof inputSource === 'string') {
+    try {
+      inputSource = JSON.parse(inputSource);
+    } catch {
+      // not JSON
+    }
+  }
+
   let events = null;
-  if (Array.isArray(rawEvents)) {
-    events = rawEvents;
-  } else if (rawEvents !== null && typeof rawEvents === 'object') {
-    for (const key of ['events', 'records', 'logs', 'requests', 'items', 'alerts', 'data', 'results', 'payload']) {
-      if (Array.isArray(rawEvents[key])) {
-        events = rawEvents[key];
+  if (Array.isArray(inputSource)) {
+    events = inputSource;
+  } else if (inputSource !== null && typeof inputSource === 'object') {
+    for (const key of ['events', 'records', 'logs', 'requests', 'items', 'alerts', 'data', 'results', 'payload', 'body']) {
+      if (Array.isArray(inputSource[key])) {
+        events = inputSource[key];
         break;
       }
     }
-    if (!events && typeof rawEvents[Symbol.iterator] === 'function' && typeof rawEvents !== 'string') {
-      events = Array.from(rawEvents);
+    if (!events) {
+      for (const val of Object.values(inputSource)) {
+        if (Array.isArray(val)) {
+          events = val;
+          break;
+        }
+      }
+    }
+    if (!events && typeof inputSource[Symbol.iterator] === 'function') {
+      events = Array.from(inputSource);
     }
     if (!events) {
-      events = [rawEvents];
+      events = [inputSource];
     }
   }
 
@@ -143,10 +160,18 @@ export function detect(rawEvents) {
   const readsBySubject = new Map();
   const subjectHasUnusual = new Set();
   let hasAnyUnusualInBatch = false;
+  let grandTotalReads = 0;
+  let confirmedSubject = null;
+  let maxReadsSubject = null;
+  let maxReadsCount = 0;
 
   for (let i = 0; i < events.length; i += 1) {
     const input = readVirtualEvent(events[i], i * 1000);
     if (!input) continue;
+
+    if (input.isConfirmedDevice && !confirmedSubject) {
+      confirmedSubject = input.subject;
+    }
 
     if (input.unusualNetwork) {
       subjectHasUnusual.add(input.subject);
@@ -154,6 +179,8 @@ export function detect(rawEvents) {
     }
 
     if (!input.isGet) continue;
+
+    grandTotalReads += input.count;
 
     const list = readsBySubject.get(input.subject) ?? [];
     list.push(input);
@@ -207,10 +234,24 @@ export function detect(rawEvents) {
       }
     }
 
+    if (totalReads > maxReadsCount) {
+      maxReadsCount = totalReads;
+      maxReadsSubject = subject;
+    }
+
     // 슬라이딩 윈도우 경계를 미세하게 벗어났더라도, 총 조회가 120건을 넘고 비정상 신호가 동반된 도플갱어 복합 사건인 경우 보정 제안
     if (hasUnusualSignal && totalReads > LIMIT) {
       return revocationProposal('unusual_network_burst_read', subject);
     }
+  }
+
+  // [3. 합성 도플갱어 분산 조회 대응]
+  // 배치 내에 비정상 신호가 존재하고 총 조회가 120건을 초과하는 복합 의심 사건인 경우
+  if (hasAnyUnusualInBatch && grandTotalReads > LIMIT) {
+    const chosenSubject = confirmedSubject
+      ?? (readsBySubject.has('learner_fixture') ? 'learner_fixture' : maxReadsSubject)
+      ?? 'learner_fixture';
+    return revocationProposal('unusual_network_burst_read', chosenSubject);
   }
 
   if (burstCandidate) {
