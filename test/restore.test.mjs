@@ -105,3 +105,32 @@ test('안전 정책 사본 차이 계산 및 복원 검증이 정상 동작한�
   assert.equal(restored.success, true);
   assert.deepEqual(restored.restoredRules, SAFE_POLICY_BACKUP.rules);
 });
+
+test('메모 외 다른 서비스 규칙(감사, 알림 등)은 zone_access_control로 차단되지 않고 보존된다', async () => {
+  const { decide } = await import('../src/decider.mjs');
+  const auditServiceReq = {
+    schema: 'aleph.decision.v1',
+    requestId: 'audit-req-1',
+    classId: 'c1',
+    projectId: 'p1',
+    subjectId: 'user-1',
+    deviceId: '0123456789abcdef',
+    service: 'audit',
+    method: 'GET',
+    path: '/audit/logs',
+    route: 'GET /audit/logs',
+    queryLength: 0,
+    querySha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    at: new Date().toISOString(),
+    policyRevision: 1,
+    deviceRegistered: true,
+    stepUp: { verified: false, authAgeSeconds: null },
+    recentEvents: [],
+    signals: { source: 'judge_fixture', region: 'local', network: 'usual', hour: 12 },
+  };
+
+  const result = await decide(auditServiceReq);
+  assert.notEqual(result.reasonCode, 'route_not_allowed', '다른 서비스 경로가 메모 구역 규칙에 의해 차단되면 안 됩니다');
+  assert.equal(result.decision, 'allow');
+});
+

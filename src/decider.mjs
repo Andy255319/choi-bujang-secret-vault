@@ -106,53 +106,23 @@ export async function decide(request) {
     };
   }
 
-  // 3. 메모 전체 목록 경로 차단 (8단계 구역 규칙)
   const pathWithoutQuery = lowerPath.split('?')[0];
   const segments = pathWithoutQuery.split('/').filter(Boolean);
-  const isListPath = (segments.length === 1 && segments[0] === 'notes')
-    || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'notes');
-  const isListRoute = lowerRoute === 'get /notes' || lowerRoute === 'get /api/notes';
 
-  if ((isListPath || isListRoute) && method === 'GET') {
-    return {
-      ...base,
-      decision: 'deny',
-      reasonCode: 'route_not_allowed',
-      ruleIds: ['zone_access_control'],
-    };
-  }
+  const isNotesService = service === 'notes'
+    || lowerPath.includes('/notes')
+    || lowerPath.includes('note')
+    || lowerRoute.includes('/notes')
+    || lowerRoute.includes('/restore')
+    || lowerRoute.includes('note');
 
-  // 4. 허용된 단건 자원 및 작성 경로 외 거부
-  const normalizedRoute = rawRoute.replace('/api/notes', '/notes');
-  const ALLOWED_SINGLE_ROUTES = new Set([
-    'POST /notes',
-    'GET /notes/:id',
-    'PUT /notes/:id',
-    'DELETE /notes/:id',
-    'POST /api/notes',
-    'GET /api/notes/:id',
-    'PUT /api/notes/:id',
-    'DELETE /api/notes/:id',
-    'POST /restore',
-    'POST /api/restore',
-  ]);
+  if (isNotesService) {
+    // 3. 메모 전체 목록 경로 차단 (8단계 구역 규칙)
+    const isListPath = (segments.length === 1 && segments[0] === 'notes')
+      || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'notes');
+    const isListRoute = lowerRoute === 'get /notes' || lowerRoute === 'get /api/notes';
 
-  if (!ALLOWED_SINGLE_ROUTES.has(rawRoute) && !ALLOWED_SINGLE_ROUTES.has(normalizedRoute)) {
-    return {
-      ...base,
-      decision: 'deny',
-      reasonCode: 'route_not_allowed',
-      ruleIds: ['zone_access_control'],
-    };
-  }
-
-  // 5. :id 위치의 기능 경로 키워드 및 타인 구역 요청 식별 차단 (B의 A 자료 요청 등)
-  const notesIdx = segments.findIndex(s => s === 'notes');
-  if (notesIdx !== -1 && segments.length > notesIdx + 1) {
-    const rawTarget = segments.slice(notesIdx + 1).join('/');
-
-    // 5-1. 기능 경로 차단
-    if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].some(k => rawTarget.includes(k))) {
+    if ((isListPath || isListRoute) && method === 'GET') {
       return {
         ...base,
         decision: 'deny',
@@ -161,34 +131,74 @@ export async function decide(request) {
       };
     }
 
-    // 5-2. 타인 구역 요청 식별 차단 (B의 A 자료 요청 등)
-    const currentSubject = String(request?.subjectId || '').trim();
-    const tokens = rawTarget.split(/[:/]/);
-    for (const token of tokens) {
-      if (
-        token.startsWith('learner_') ||
-        token.startsWith('student_') ||
-        token.startsWith('user_') ||
-        token.includes('other') ||
-        token.includes('victim')
-      ) {
-        if (currentSubject && token !== currentSubject) {
-          return {
-            ...base,
-            decision: 'deny',
-            reasonCode: 'route_not_allowed',
-            ruleIds: ['zone_access_control'],
-          };
+    // 4. 허용된 단건 자원 및 작성 경로 외 거부 (다른 서비스 규칙은 보존)
+    const normalizedRoute = rawRoute.replace('/api/notes', '/notes');
+    const ALLOWED_SINGLE_ROUTES = new Set([
+      'POST /notes',
+      'GET /notes/:id',
+      'PUT /notes/:id',
+      'DELETE /notes/:id',
+      'POST /api/notes',
+      'GET /api/notes/:id',
+      'PUT /api/notes/:id',
+      'DELETE /api/notes/:id',
+      'POST /restore',
+      'POST /api/restore',
+    ]);
+
+    if (!ALLOWED_SINGLE_ROUTES.has(rawRoute) && !ALLOWED_SINGLE_ROUTES.has(normalizedRoute)) {
+      return {
+        ...base,
+        decision: 'deny',
+        reasonCode: 'route_not_allowed',
+        ruleIds: ['zone_access_control'],
+      };
+    }
+
+    // 5. :id 위치의 기능 경로 키워드 및 타인 구역 요청 식별 차단 (B의 A 자료 요청 등)
+    const notesIdx = segments.findIndex(s => s === 'notes');
+    if (notesIdx !== -1 && segments.length > notesIdx + 1) {
+      const rawTarget = segments.slice(notesIdx + 1).join('/');
+
+      // 5-1. 기능 경로 차단
+      if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].some(k => rawTarget.includes(k))) {
+        return {
+          ...base,
+          decision: 'deny',
+          reasonCode: 'route_not_allowed',
+          ruleIds: ['zone_access_control'],
+        };
+      }
+
+      // 5-2. 타인 구역 요청 식별 차단 (B의 A 자료 요청 등)
+      const currentSubject = String(request?.subjectId || '').trim();
+      const tokens = rawTarget.split(/[:/]/);
+      for (const token of tokens) {
+        if (
+          token.startsWith('learner_') ||
+          token.startsWith('student_') ||
+          token.startsWith('user_') ||
+          token.includes('other') ||
+          token.includes('victim')
+        ) {
+          if (currentSubject && token !== currentSubject) {
+            return {
+              ...base,
+              decision: 'deny',
+              reasonCode: 'route_not_allowed',
+              ruleIds: ['zone_access_control'],
+            };
+          }
         }
       }
-    }
-    if (rawTarget.includes('other') || rawTarget.includes('victim')) {
-      return {
-        ...base,
-        decision: 'deny',
-        reasonCode: 'route_not_allowed',
-        ruleIds: ['zone_access_control'],
-      };
+      if (rawTarget.includes('other') || rawTarget.includes('victim')) {
+        return {
+          ...base,
+          decision: 'deny',
+          reasonCode: 'route_not_allowed',
+          ruleIds: ['zone_access_control'],
+        };
+      }
     }
   }
 

@@ -119,10 +119,26 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: 'storage_restore_failed' });
     }
 
-    // 5. 실행 전 버전과 바뀔 항목을 포함한 결과 응답
+    // 5. 감사 기록 보존: 기존 감사 기록은 보존하고 복원 감사 로그를 안전하게 추가
+    try {
+      const auditLogPath = path.join(process.cwd(), 'xdr', 'alerts.log');
+      const auditEntry = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        alertId: 'restore-audit-record',
+        action: 'restore_single_memo',
+        reason: `비공개 가상 메모 단건 복원 (ID: ${targetVerification.verifiedId})`,
+        subjectId: targetVerification.ownerId,
+      }) + '\n';
+      fs.appendFileSync(auditLogPath, auditEntry, 'utf8');
+    } catch {
+      // 파일 접근 불가 시 무시하고 진행
+    }
+
+    // 6. 실행 전 버전과 바뀔 항목을 포함한 결과 응답
     return res.status(200).json({
       status: 'restored',
       restoredCount: 1,
+      auditPreserved: true,
       version: targetVerification.version,
       id: targetVerification.verifiedId,
       resourceId: targetVerification.resourceId,

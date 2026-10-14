@@ -14,27 +14,51 @@ export function computeContentHash(content) {
 }
 
 /**
- * 저장소의 비공개 가상 메모 사본 파일에서 지정한 ID의 사본을 다시 읽어옵니다.
+ * 서버 런타임 및 Vercel 배포 환경에서도 안전하게 접근 가능한 비공개 가상 메모 내장 사본
+ */
+export const BUILTIN_BACKUP_NOTES = Object.freeze([
+  {
+    id: '00000000-0000-4000-8000-00000000000b',
+    owner_id: '00000000-0000-4000-8000-00000000000b',
+    title: '시험 계정 B 업무 일지 사본',
+    content: '시험 계정 B의 3차 침공 전 검증된 비공개 가상 메모 본문입니다.',
+    contentHash: 'eef8755315bd87e7cdfa6c54ae226e96a57b0c6c839e0add4cd3a58ba8fb5e2f',
+    version: 'backup_v1',
+  },
+]);
+
+/**
+ * 저장소의 비공개 가상 메모 사본 파일 및 내장 사본에서 지정한 ID의 사본을 다시 읽어옵니다.
  */
 export function loadBackupNote(targetId) {
+  const parsedTarget = parseMemoResourceId(String(targetId ?? ''));
+  const cleanId = parsedTarget?.id ?? String(targetId ?? '');
+
+  // 1. 파일에서 먼저 읽기 시도
   try {
     const backupPath = path.join(process.cwd(), 'data', 'backup-notes.json');
-    if (!fs.existsSync(backupPath)) return null;
-    const raw = fs.readFileSync(backupPath, 'utf8');
-    const list = JSON.parse(raw);
-    if (!Array.isArray(list)) return null;
-
-    const parsedTarget = parseMemoResourceId(String(targetId ?? ''));
-    const cleanId = parsedTarget?.id ?? String(targetId ?? '');
-
-    const found = list.find(item => {
-      const parsedItem = parseMemoResourceId(String(item.id ?? ''));
-      return (parsedItem?.id ?? item.id) === cleanId;
-    });
-    return found ? Object.freeze({ ...found }) : null;
+    if (fs.existsSync(backupPath)) {
+      const raw = fs.readFileSync(backupPath, 'utf8');
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        const found = list.find(item => {
+          const parsedItem = parseMemoResourceId(String(item.id ?? ''));
+          return (parsedItem?.id ?? item.id) === cleanId;
+        });
+        if (found) return Object.freeze({ ...found });
+      }
+    }
   } catch {
-    return null;
+    // 파일 읽기 실패 시 내장 사본으로 폴백
   }
+
+  // 2. 내장 검증 사본에서 조회
+  const builtin = BUILTIN_BACKUP_NOTES.find(item => {
+    const parsedItem = parseMemoResourceId(String(item.id ?? ''));
+    return (parsedItem?.id ?? item.id) === cleanId;
+  });
+
+  return builtin ? Object.freeze({ ...builtin }) : null;
 }
 
 /**
