@@ -109,12 +109,15 @@ export async function decide(request) {
   const pathWithoutQuery = lowerPath.split('?')[0];
   const segments = pathWithoutQuery.split('/').filter(Boolean);
 
-  const isNotesService = service === 'notes'
-    || lowerPath.includes('/notes')
-    || lowerPath.includes('note')
+  // 감사(audit) 등 다른 서비스 규칙은 메모 구역 규칙에 의해 차단되지 않고 보존됩니다.
+  const isNotesService = (service === 'notes' || service === '') && (
+    lowerPath.startsWith('/notes')
+    || lowerPath.startsWith('/api/notes')
+    || lowerPath.startsWith('/restore')
+    || lowerPath.startsWith('/api/restore')
     || lowerRoute.includes('/notes')
     || lowerRoute.includes('/restore')
-    || lowerRoute.includes('note');
+  );
 
   if (isNotesService) {
     // 3. 메모 전체 목록 경로 차단 (8단계 구역 규칙)

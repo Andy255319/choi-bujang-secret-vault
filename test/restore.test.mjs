@@ -186,3 +186,13 @@ test('GET /api/restore 사전 조회 요청은 decider의 zone_access_control에
   assert.equal(result.reasonCode, 'approved');
 });
 
+test('대상 ID가 지정되지 않거나 사본이 없으면 복원 검증이 즉시 중단된다', () => {
+  const missingTargetResult = verifyBackupIntegrity(null, backupSampleB, TEST_ACCOUNT_B_ID);
+  assert.equal(missingTargetResult.valid, false);
+  assert.equal(missingTargetResult.reason, 'missing_target');
+
+  const emptyCandidateResult = verifyBackupIntegrity({}, null, TEST_ACCOUNT_B_ID);
+  assert.equal(emptyCandidateResult.valid, false);
+  assert.equal(emptyCandidateResult.reason, 'backup_not_found');
+});
+
