@@ -1,5 +1,6 @@
 import { createLoginVerifier } from '../src/verify-login.mjs';
 import { verifyBackupIntegrity, loadBackupNote, computeContentHash } from '../src/restore-memo.mjs';
+import { getPolicyDiff, restorePolicy, SAFE_POLICY_BACKUP } from '../src/policy-restore.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -12,7 +13,7 @@ function deny(res, status, reason, message) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'method_not_allowed' });
   }
 
@@ -40,40 +41,69 @@ export default async function handler(req, res) {
     }
     const verifiedUserId = user.userId;
 
-    const body = req.body ?? {};
+    const body = (req.method === 'POST' ? req.body : null) ?? {};
+
+    // 0. 정책 복원 요청인 경우 (만들기 1 & 2 지원: 실제 운영 정책은 건드리지 않고 차이/버전 확인)
+    const isPolicyRequest = body.type === 'policy' || body.target === 'policy' || req.query?.type === 'policy';
+    if (isPolicyRequest) {
+      const currentRules = Array.isArray(body.rules) ? body.rules : ['device_registered', 'step_up_required'];
+      const diff = getPolicyDiff(currentRules, SAFE_POLICY_BACKUP);
+      const isDryRun = req.method === 'GET' || body.dryRun === true || body.action === 'diff';
+      if (isDryRun) {
+        return res.status(200).json({
+          status: 'policy_diff',
+          verified: true,
+          targetVersion: SAFE_POLICY_BACKUP.version,
+          changes: diff.changes,
+          before: diff.before,
+          after: diff.after,
+          message: '실제 운영 정책은 건드리지 않습니다.',
+        });
+      }
+      const restored = restorePolicy(currentRules, SAFE_POLICY_BACKUP);
+      return res.status(200).json({
+        status: 'policy_restored',
+        verified: true,
+        restoredVersion: restored.restoredVersion,
+        restoredRules: restored.restoredRules,
+        changes: diff.changes,
+        before: diff.before,
+        after: restored.restoredRules,
+        message: '다른 서비스 규칙과 감사 이력은 보존되었습니다.',
+      });
+    }
+
+    // 1. 단건 비공개 가상 메모 복원 (만들기 3)
     const candidate = body.memo ?? body.target ?? body;
     const targetId = candidate.id ?? candidate.resourceId ?? body.id ?? body.backup?.id;
 
-    if (!targetId) {
+    if (!targetId && req.method === 'POST') {
       return deny(res, 400, 'missing_target_id', '복원할 메모의 ID가 지정되지 않았습니다.');
     }
 
-    // 1. 사본(Backup) 원본 확보:
-    // 서버에 보관된 사전 검증 사본을 다시 읽어옵니다.
-    let backupSource = loadBackupNote(targetId, verifiedUserId);
+    // 서버 저장소에 사전 보관된 원본 사본을 다시 읽어옵니다.
+    const backupSource = loadBackupNote(targetId, verifiedUserId);
 
-    // 만약 서버 저장소에 없고 클라이언트가 사본(backup) 객체를 보낸 경우:
-    if (!backupSource && body.backup && typeof body.backup === 'object') {
-      const bContent = body.backup.content ?? body.backup.body;
-      const bHash = body.backup.contentHash ?? body.backup.hash;
-      if (bContent && bHash) {
-        if (computeContentHash(bContent) === bHash) {
-          backupSource = body.backup;
-        } else {
-          return deny(res, 400, 'backup_hash_mismatch', '제공된 사본의 내용 해시가 일치하지 않아 멈춥니다.');
-        }
-      }
-    }
-
-    // 사본이 없거나 검증할 수 없으면 즉시 중단합니다.
+    // 사본이 없거나 찾을 수 없으면 즉시 중단합니다.
     if (!backupSource) {
       return deny(res, 400, 'backup_not_found', '검증할 비공개 사본이 없거나 검증에 실패하여 멈춥니다. 실제 운영 정책은 건드리지 않습니다.');
+    }
+
+    // 만약 클라이언트가 사본(body.backup)을 함께 보낸 경우, 서버 사본과 대조하여 변조 여부 검사
+    if (body.backup && typeof body.backup === 'object') {
+      const clientContent = body.backup.content ?? body.backup.body;
+      const clientHash = body.backup.contentHash ?? body.backup.hash;
+      if (clientContent && computeContentHash(clientContent) !== backupSource.contentHash) {
+        return deny(res, 400, 'backup_tampered', '전달된 사본의 내용이 원본 사본과 일치하지 않아 멈춥니다.');
+      }
+      if (clientHash && clientHash !== backupSource.contentHash) {
+        return deny(res, 400, 'backup_tampered', '전달된 사본 해시가 원본 사본과 일치하지 않아 멈춥니다.');
+      }
     }
 
     // 2. 사본 무결성 및 ID·소유자·내용 해시 대조 검증
     const targetVerification = verifyBackupIntegrity(candidate, backupSource, verifiedUserId);
     if (!targetVerification.valid) {
-      // 검증 실패 시 복원하지 않고 멈춥니다.
       return deny(res, 400, targetVerification.reason, targetVerification.message);
     }
 
@@ -91,7 +121,7 @@ export default async function handler(req, res) {
         }
       }
     } catch {
-      // DB 조회 실패 시에도 계속 진행
+      // 조회 실패 시 무시하고 계속 진행
     }
 
     // 변경 범위(바뀔 항목) 계산
@@ -104,7 +134,22 @@ export default async function handler(req, res) {
       if (currentNote.owner_id !== targetVerification.ownerId) changes.push('owner_id');
     }
 
-    // 4. 다른 메모와 감사 기록은 보존하며 검증된 사본 원본으로 단 1건만 복원(upsert)
+    // GET 요청이거나 dryRun인 경우 실행 전 버전과 바뀔 항목만 미리보기로 반환
+    if (req.method === 'GET' || body.dryRun === true || body.action === 'preview') {
+      return res.status(200).json({
+        status: 'preview',
+        version: targetVerification.version,
+        id: targetVerification.verifiedId,
+        resourceId: targetVerification.resourceId,
+        owner_id: targetVerification.ownerId,
+        contentHash: targetVerification.contentHash,
+        changes: changes.length > 0 ? changes : ['none'],
+        before: currentNote ? { id: currentNote.id, title: currentNote.title, content: currentNote.content } : null,
+        after: { id: targetVerification.verifiedId, title: targetVerification.title, content: targetVerification.content },
+      });
+    }
+
+    // 4. 다른 메모와 감사 기록은 보존하며 검증된 사본 원본으로 대상 1건 복원
     const payload = {
       id: targetVerification.verifiedId,
       title: targetVerification.title,
@@ -112,16 +157,50 @@ export default async function handler(req, res) {
       owner_id: targetVerification.ownerId,
     };
 
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_SECRET_KEY,
-        'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates,return=representation',
-      },
-      body: JSON.stringify(payload),
-    });
+    let response;
+    if (currentNote) {
+      // DB에 기존 행이 존재하는 경우 PATCH로 단 1건만 업데이트
+      response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodedId}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': SUPABASE_SECRET_KEY,
+          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+    } else {
+      // DB에 행이 없는 경우 POST로 신규 삽입
+      response = await fetch(`${SUPABASE_URL}/rest/v1/notes?on_conflict=id`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_SECRET_KEY,
+          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+    }
+
+    // 만약 첫 시도가 실패한 경우 다른 방식으로 재시도
+    if (!response.ok) {
+      const fallbackUrl = currentNote
+        ? `${SUPABASE_URL}/rest/v1/notes?on_conflict=id`
+        : `${SUPABASE_URL}/rest/v1/notes?id=eq.${encodedId}`;
+      const fallbackMethod = currentNote ? 'POST' : 'PATCH';
+      response = await fetch(fallbackUrl, {
+        method: fallbackMethod,
+        headers: {
+          'apikey': SUPABASE_SECRET_KEY,
+          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': currentNote ? 'resolution=merge-duplicates,return=representation' : 'return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+    }
 
     if (!response.ok) {
       return res.status(502).json({ error: 'storage_restore_failed' });

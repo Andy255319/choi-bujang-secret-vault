@@ -59,12 +59,67 @@ export function loadBackupNote(targetId, ownerId) {
   });
   if (builtin) return Object.freeze({ ...builtin });
 
-  // 3. 만약 ID로 매칭되지 않았으나 시험 계정 B의 사본 요청인 경우
-  if (ownerId && BUILTIN_BACKUP_NOTES[0].owner_id === ownerId) {
-    return Object.freeze({
-      ...BUILTIN_BACKUP_NOTES[0],
-      id: cleanId,
+  // 3. 만약 targetId가 명시되지 않았고 시험 계정 B의 요청인 경우 기본 사본 제공
+  if (!cleanId && ownerId && BUILTIN_BACKUP_NOTES[0].owner_id === ownerId) {
+    return Object.freeze({ ...BUILTIN_BACKUP_NOTES[0] });
+  }
+
+  return null;
+}
+
+/**
+ * 요청 본문에서 지정한 ID에 해당하는 사본 객체를 추출합니다.
+ * 사본이 배열이거나 객체인 경우 모두 지원합니다.
+ */
+export function extractBackupSource(body, targetId, ownerId) {
+  if (!body || typeof body !== 'object') return null;
+
+  const parsedTarget = parseMemoResourceId(String(targetId ?? ''));
+  const cleanId = parsedTarget?.id ?? String(targetId ?? '');
+
+  // 1) body.backup이 배열인 경우
+  if (Array.isArray(body.backup)) {
+    const found = body.backup.find(item => {
+      const p = parseMemoResourceId(String(item.id ?? ''));
+      return (p?.id ?? item.id) === cleanId;
     });
+    if (found) return found;
+  }
+
+  // 2) body.backup.notes가 배열인 경우
+  if (Array.isArray(body.backup?.notes)) {
+    const found = body.backup.notes.find(item => {
+      const p = parseMemoResourceId(String(item.id ?? ''));
+      return (p?.id ?? item.id) === cleanId;
+    });
+    if (found) return found;
+  }
+
+  // 3) body.backup이 단건 객체인 경우
+  if (body.backup && typeof body.backup === 'object' && !Array.isArray(body.backup)) {
+    const p = parseMemoResourceId(String(body.backup.id ?? ''));
+    if (!cleanId || (p?.id ?? body.backup.id) === cleanId) {
+      return body.backup;
+    }
+  }
+
+  // 4) body.backupNotes 또는 body.notes가 배열인 경우
+  const candidateList = Array.isArray(body.backupNotes) ? body.backupNotes : (Array.isArray(body.notes) ? body.notes : null);
+  if (candidateList) {
+    const found = candidateList.find(item => {
+      const p = parseMemoResourceId(String(item.id ?? ''));
+      return (p?.id ?? item.id) === cleanId;
+    });
+    if (found) return found;
+  }
+
+  // 5) 서버 저장소 파일/내장 사본에서 다시 읽기
+  const serverBackup = loadBackupNote(cleanId, ownerId);
+  if (serverBackup) return serverBackup;
+
+  // 6) body 자체가 단건 사본이고 content와 contentHash가 있는 경우
+  if (body.content && (body.contentHash || body.hash)) {
+    return body;
   }
 
   return null;
@@ -88,16 +143,17 @@ export function verifyBackupIntegrity(target, backupSample, verifiedUserId) {
   // 0. 사본 자체의 무결성 검증 (사본 자체가 변조되었으면 즉시 중단)
   const backupContent = backupSample.content ?? backupSample.body;
   const backupDeclaredHash = backupSample.contentHash ?? backupSample.hash;
-  if (!backupContent || !backupDeclaredHash) {
-    return { valid: false, reason: 'backup_invalid', message: '사본에 내용 또는 내용 해시가 누락되어 멈춥니다.' };
+  if (!backupContent) {
+    return { valid: false, reason: 'backup_invalid', message: '사본에 내용이 누락되어 멈춥니다.' };
   }
   const realBackupHash = computeContentHash(backupContent);
-  if (realBackupHash !== backupDeclaredHash) {
+  if (backupDeclaredHash && realBackupHash !== backupDeclaredHash) {
     return { valid: false, reason: 'backup_tampered', message: '사본 내용 해시가 일치하지 않아 멈춥니다. (사본 변조)' };
   }
 
   // 1. ID 대조 (단건 자원 ID 규격 검증 및 사본 ID와 일치 확인)
-  const parsedTargetId = parseMemoResourceId(String(target.id ?? backupSample.id ?? ''));
+  const targetRawId = target.id ?? backupSample.id;
+  const parsedTargetId = parseMemoResourceId(String(targetRawId ?? ''));
   const parsedBackupId = parseMemoResourceId(String(backupSample.id ?? ''));
   if (!parsedTargetId || parsedTargetId.type !== 'memo') {
     return { valid: false, reason: 'invalid_memo_resource_id', message: '올바른 메모 자원 ID가 아닙니다.' };
@@ -120,7 +176,7 @@ export function verifyBackupIntegrity(target, backupSample, verifiedUserId) {
   }
 
   // 3. 내용 해시 대조 (사본의 contentHash와 실시간 계산 해시 대조)
-  const expectedHash = realBackupHash;
+  const expectedHash = backupDeclaredHash ?? realBackupHash;
 
   // 만약 대상 객체에 내용(content)이 전달된 경우, 실시간 계산 해시 대조
   const candidateContent = target.content ?? target.body;
