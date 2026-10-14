@@ -134,3 +134,27 @@ test('메모 외 다른 서비스 규칙(감사, 알림 등)은 zone_access_cont
   assert.equal(result.decision, 'allow');
 });
 
+test('배열 형태의 사본이나 변조된 내용이 전달된 경우 사본 검증에서 정확히 탐지 및 거부된다', async () => {
+  const { extractBackupSource } = await import('../src/restore-memo.mjs');
+  const bodyWithArray = {
+    backup: [
+      {
+        id: backupSampleB.id,
+        owner_id: TEST_ACCOUNT_B_ID,
+        title: '변조된 제목',
+        content: '변조된 본문',
+        contentHash: 'bad_hash',
+      },
+    ],
+  };
+
+  const extracted = extractBackupSource(bodyWithArray, TEST_ACCOUNT_B_ID, TEST_ACCOUNT_B_ID);
+  assert.ok(extracted);
+  assert.equal(extracted.content, '변조된 본문');
+
+  // 추출된 변조 사본을 신뢰할 수 있는 사본과 대조 시 거부 확인
+  const verifyResult = verifyBackupIntegrity(extracted, backupSampleB, TEST_ACCOUNT_B_ID);
+  assert.equal(verifyResult.valid, false);
+  assert.match(verifyResult.reason, /content_hash/u);
+});
+

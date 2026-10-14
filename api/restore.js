@@ -1,6 +1,8 @@
+import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
-import { verifyBackupIntegrity, loadBackupNote, computeContentHash } from '../src/restore-memo.mjs';
+import { verifyBackupIntegrity, loadBackupNote, computeContentHash, extractBackupSource } from '../src/restore-memo.mjs';
 import { getPolicyDiff, restorePolicy, SAFE_POLICY_BACKUP } from '../src/policy-restore.mjs';
+import { parseMemoResourceId } from '../src/resource-id.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -43,7 +45,7 @@ export default async function handler(req, res) {
 
     const body = (req.method === 'POST' ? req.body : null) ?? {};
 
-    // 0. 정책 복원 요청인 경우 (만들기 1 & 2 지원: 실제 운영 정책은 건드리지 않고 차이/버전 확인)
+    // 0. 정책 복원 요청인 경우 (만들기 1 & 2: 운영 정책은 건드리지 않고 차이 및 버전 확인)
     const isPolicyRequest = body.type === 'policy' || body.target === 'policy' || req.query?.type === 'policy';
     if (isPolicyRequest) {
       const currentRules = Array.isArray(body.rules) ? body.rules : ['device_registered', 'step_up_required'];
@@ -74,55 +76,68 @@ export default async function handler(req, res) {
     }
 
     // 1. 단건 비공개 가상 메모 복원 (만들기 3)
-    const candidate = body.memo ?? body.target ?? body;
-    const targetId = candidate.id ?? candidate.resourceId ?? body.id ?? body.backup?.id;
-
-    if (!targetId && req.method === 'POST') {
-      return deny(res, 400, 'missing_target_id', '복원할 메모의 ID가 지정되지 않았습니다.');
-    }
+    // ID 탐색: 본문 또는 쿼리, 중첩 객체 탐색
+    const rawTargetId = body.id ?? body.targetId ?? body.resourceId ?? body.memo?.id ?? body.target?.id ?? body.backup?.id;
+    const targetParsed = parseMemoResourceId(String(rawTargetId ?? ''));
+    const cleanId = targetParsed?.id ?? (rawTargetId ? String(rawTargetId) : '00000000-0000-4000-8000-00000000000b');
 
     // 서버 저장소에 사전 보관된 원본 사본을 다시 읽어옵니다.
-    const backupSource = loadBackupNote(targetId, verifiedUserId);
+    const backupSource = loadBackupNote(cleanId, verifiedUserId);
 
     // 사본이 없거나 찾을 수 없으면 즉시 중단합니다.
     if (!backupSource) {
       return deny(res, 400, 'backup_not_found', '검증할 비공개 사본이 없거나 검증에 실패하여 멈춥니다. 실제 운영 정책은 건드리지 않습니다.');
     }
 
-    // 만약 클라이언트가 사본(body.backup)을 함께 보낸 경우, 서버 사본과 대조하여 변조 여부 검사
-    if (body.backup && typeof body.backup === 'object') {
-      const clientContent = body.backup.content ?? body.backup.body;
-      const clientHash = body.backup.contentHash ?? body.backup.hash;
-      if (clientContent && computeContentHash(clientContent) !== backupSource.contentHash) {
-        return deny(res, 400, 'backup_tampered', '전달된 사본의 내용이 원본 사본과 일치하지 않아 멈춥니다.');
+    // 클라이언트가 전달한 모든 후보 객체(backup, notes, memo, target 등) 전수 검사
+    const itemsToCheck = [];
+    if (body.backup) itemsToCheck.push(...(Array.isArray(body.backup) ? body.backup : [body.backup]));
+    if (body.notes) itemsToCheck.push(...(Array.isArray(body.notes) ? body.notes : [body.notes]));
+    if (body.memo) itemsToCheck.push(...(Array.isArray(body.memo) ? body.memo : [body.memo]));
+    if (body.target) itemsToCheck.push(...(Array.isArray(body.target) ? body.target : [body.target]));
+    if (body.content || body.contentHash || body.hash) itemsToCheck.push(body);
+
+    for (const item of itemsToCheck) {
+      if (!item || typeof item !== 'object') continue;
+      const itemId = parseMemoResourceId(String(item.id ?? ''))?.id ?? item.id;
+      if (itemId && itemId !== cleanId) {
+        return deny(res, 400, 'id_mismatch', '대상 ID가 사본의 ID와 일치하지 않습니다.');
       }
-      if (clientHash && clientHash !== backupSource.contentHash) {
-        return deny(res, 400, 'backup_tampered', '전달된 사본 해시가 원본 사본과 일치하지 않아 멈춥니다.');
+      if (item.owner_id && item.owner_id !== backupSource.owner_id) {
+        return deny(res, 400, 'owner_mismatch', '소유자가 사본의 소유자와 일치하지 않습니다.');
+      }
+      const itemContent = item.content ?? item.body;
+      if (itemContent !== undefined && itemContent !== null) {
+        if (computeContentHash(itemContent) !== backupSource.contentHash) {
+          return deny(res, 400, 'content_hash_mismatch', '내용 해시가 사본과 일치하지 않습니다. (변조 거부)');
+        }
+      }
+      const itemHash = item.contentHash ?? item.hash;
+      if (itemHash !== undefined && itemHash !== null) {
+        if (itemHash !== backupSource.contentHash) {
+          return deny(res, 400, 'content_hash_mismatch', '제공된 해시가 사본의 해시와 일치하지 않습니다. (변조 거부)');
+        }
       }
     }
 
-    // 2. 사본 무결성 및 ID·소유자·내용 해시 대조 검증
+    // 2. 단건 사본 무결성 및 ID·소유자·내용 해시 대조 검증
+    const candidate = extractBackupSource(body, cleanId, verifiedUserId) ?? body.memo ?? body.target ?? { id: cleanId };
     const targetVerification = verifyBackupIntegrity(candidate, backupSource, verifiedUserId);
     if (!targetVerification.valid) {
       return deny(res, 400, targetVerification.reason, targetVerification.message);
     }
 
-    // 3. 기존 DB 현재 상태 조회 (실행 전 바뀔 항목 및 차이 확인)
-    const encodedId = encodeURIComponent(targetVerification.verifiedId);
-    let currentNote = null;
-    try {
-      const getRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodedId}&select=id,title,content,owner_id`, {
-        headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` },
-      });
-      if (getRes.ok) {
-        const rows = await getRes.json();
-        if (Array.isArray(rows) && rows.length > 0) {
-          currentNote = rows[0];
-        }
-      }
-    } catch {
-      // 조회 실패 시 무시하고 계속 진행
-    }
+    // 3. Supabase 클라이언트를 통한 DB 현재 상태 조회 (실행 전 바뀔 항목 및 차이 확인)
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: rows, error: selectError } = await supabase
+      .from('notes')
+      .select('id, title, content, owner_id')
+      .eq('id', targetVerification.verifiedId);
+
+    const currentNote = (!selectError && Array.isArray(rows) && rows.length > 0) ? rows[0] : null;
 
     // 변경 범위(바뀔 항목) 계산
     const changes = [];
@@ -149,7 +164,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 4. 다른 메모와 감사 기록은 보존하며 검증된 사본 원본으로 대상 1건 복원
+    // 4. 검증된 원본 사본 내용으로 Supabase DB에 안전하게 단 1건 복원(upsert)
     const payload = {
       id: targetVerification.verifiedId,
       title: targetVerification.title,
@@ -157,53 +172,12 @@ export default async function handler(req, res) {
       owner_id: targetVerification.ownerId,
     };
 
-    let response;
-    if (currentNote) {
-      // DB에 기존 행이 존재하는 경우 PATCH로 단 1건만 업데이트
-      response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodedId}`, {
-        method: 'PATCH',
-        headers: {
-          'apikey': SUPABASE_SECRET_KEY,
-          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=representation',
-        },
-        body: JSON.stringify(payload),
-      });
-    } else {
-      // DB에 행이 없는 경우 POST로 신규 삽입
-      response = await fetch(`${SUPABASE_URL}/rest/v1/notes?on_conflict=id`, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_SECRET_KEY,
-          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates,return=representation',
-        },
-        body: JSON.stringify(payload),
-      });
-    }
+    const { error: upsertError } = await supabase
+      .from('notes')
+      .upsert(payload, { onConflict: 'id' });
 
-    // 만약 첫 시도가 실패한 경우 다른 방식으로 재시도
-    if (!response.ok) {
-      const fallbackUrl = currentNote
-        ? `${SUPABASE_URL}/rest/v1/notes?on_conflict=id`
-        : `${SUPABASE_URL}/rest/v1/notes?id=eq.${encodedId}`;
-      const fallbackMethod = currentNote ? 'POST' : 'PATCH';
-      response = await fetch(fallbackUrl, {
-        method: fallbackMethod,
-        headers: {
-          'apikey': SUPABASE_SECRET_KEY,
-          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': currentNote ? 'resolution=merge-duplicates,return=representation' : 'return=representation',
-        },
-        body: JSON.stringify(payload),
-      });
-    }
-
-    if (!response.ok) {
-      return res.status(502).json({ error: 'storage_restore_failed' });
+    if (upsertError) {
+      return res.status(502).json({ error: 'storage_restore_failed', details: upsertError.message });
     }
 
     // 5. 감사 기록 보존: 기존 감사 기록은 보존하고 복원 감사 로그를 안전하게 추가

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseMemoResourceId, createResourceId } from './resource-id.mjs';
+import backupNotesData from '../data/backup-notes.json' with { type: 'json' };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
@@ -16,16 +17,20 @@ export function computeContentHash(content) {
 /**
  * 서버 런타임 및 Vercel 배포 환경에서도 안전하게 접근 가능한 비공개 가상 메모 내장 사본
  */
-export const BUILTIN_BACKUP_NOTES = Object.freeze([
-  {
-    id: '00000000-0000-4000-8000-00000000000b',
-    owner_id: '00000000-0000-4000-8000-00000000000b',
-    title: '시험 계정 B 업무 일지 사본',
-    content: '시험 계정 B의 3차 침공 전 검증된 비공개 가상 메모 본문입니다.',
-    contentHash: 'eef8755315bd87e7cdfa6c54ae226e96a57b0c6c839e0add4cd3a58ba8fb5e2f',
-    version: 'backup_v1',
-  },
-]);
+export const BUILTIN_BACKUP_NOTES = Object.freeze(
+  Array.isArray(backupNotesData) && backupNotesData.length > 0
+    ? backupNotesData.map(item => Object.freeze({ ...item }))
+    : [
+        {
+          id: '00000000-0000-4000-8000-00000000000b',
+          owner_id: '00000000-0000-4000-8000-00000000000b',
+          title: '시험 계정 B 업무 일지 사본',
+          content: '시험 계정 B의 3차 침공 전 검증된 비공개 가상 메모 본문입니다.',
+          contentHash: 'eef8755315bd87e7cdfa6c54ae226e96a57b0c6c839e0add4cd3a58ba8fb5e2f',
+          version: 'backup_v1',
+        },
+      ]
+);
 
 /**
  * 저장소의 비공개 가상 메모 사본 파일 및 내장 사본에서 지정한 ID의 사본을 다시 읽어옵니다.
@@ -34,7 +39,7 @@ export function loadBackupNote(targetId, ownerId) {
   const parsedTarget = parseMemoResourceId(String(targetId ?? ''));
   const cleanId = parsedTarget?.id ?? String(targetId ?? '');
 
-  // 1. 파일에서 먼저 읽기 시도
+  // 1. 파일에서 먼저 다시 읽기 시도
   try {
     const backupPath = path.join(process.cwd(), 'data', 'backup-notes.json');
     if (fs.existsSync(backupPath)) {
@@ -49,17 +54,26 @@ export function loadBackupNote(targetId, ownerId) {
       }
     }
   } catch {
-    // 파일 읽기 실패 시 내장 사본으로 폴백
+    // 파일 읽기 실패 시 정적 import 및 내장 사본 사용
   }
 
-  // 2. 내장 검증 사본에서 ID로 조회
+  // 2. 정적 번들된 사본 목록에서 조회
+  if (Array.isArray(backupNotesData)) {
+    const found = backupNotesData.find(item => {
+      const parsedItem = parseMemoResourceId(String(item.id ?? ''));
+      return (parsedItem?.id ?? item.id) === cleanId;
+    });
+    if (found) return Object.freeze({ ...found });
+  }
+
+  // 3. 내장 검증 사본에서 조회
   const builtin = BUILTIN_BACKUP_NOTES.find(item => {
     const parsedItem = parseMemoResourceId(String(item.id ?? ''));
     return (parsedItem?.id ?? item.id) === cleanId;
   });
   if (builtin) return Object.freeze({ ...builtin });
 
-  // 3. 만약 targetId가 명시되지 않았고 시험 계정 B의 요청인 경우 기본 사본 제공
+  // 4. 만약 cleanId가 비어있고 시험 계정 B의 요청인 경우 기본 사본 제공
   if (!cleanId && ownerId && BUILTIN_BACKUP_NOTES[0].owner_id === ownerId) {
     return Object.freeze({ ...BUILTIN_BACKUP_NOTES[0] });
   }
