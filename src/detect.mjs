@@ -75,6 +75,19 @@ function readVirtualEvent(event, defaultTimestamp = 0) {
     unusualNetwork = true;
   }
 
+  if (Array.isArray(event.recentEvents)) {
+    for (const item of event.recentEvents) {
+      if (item && typeof item === 'object') {
+        const itemNet = item.networkStatus ?? item.network_status ?? item.network;
+        if (typeof itemNet === 'string' && itemNet.trim().toLowerCase() === 'unusual') {
+          unusualNetwork = true;
+        } else if (item.unusual === true || item.unusualNetwork === true || item.isUnusual === true) {
+          unusualNetwork = true;
+        }
+      }
+    }
+  }
+
   // 6. 가상 기기 확인 상태 판정 (단순 다량 조회 규칙 전용)
   const vd = event.virtualDevice;
   let isConfirmedDevice = false;
@@ -107,26 +120,29 @@ function revocationProposal(reasonCode, subject) {
 }
 
 export function detect(rawEvents) {
-  const events = Array.isArray(rawEvents)
-    ? rawEvents
-    : (rawEvents !== null && typeof rawEvents === 'object'
-      ? (Array.isArray(rawEvents.events)
-        ? rawEvents.events
-        : (Array.isArray(rawEvents.records)
-          ? rawEvents.records
-          : (Array.isArray(rawEvents.logs)
-            ? rawEvents.logs
-            : (Array.isArray(rawEvents.requests)
-              ? rawEvents.requests
-              : (Array.isArray(rawEvents.items)
-                ? rawEvents.items
-                : [rawEvents])))))
-      : null);
+  let events = null;
+  if (Array.isArray(rawEvents)) {
+    events = rawEvents;
+  } else if (rawEvents !== null && typeof rawEvents === 'object') {
+    for (const key of ['events', 'records', 'logs', 'requests', 'items', 'alerts', 'data', 'results', 'payload']) {
+      if (Array.isArray(rawEvents[key])) {
+        events = rawEvents[key];
+        break;
+      }
+    }
+    if (!events && typeof rawEvents[Symbol.iterator] === 'function' && typeof rawEvents !== 'string') {
+      events = Array.from(rawEvents);
+    }
+    if (!events) {
+      events = [rawEvents];
+    }
+  }
 
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
 
   const readsBySubject = new Map();
   const subjectHasUnusual = new Set();
+  let hasAnyUnusualInBatch = false;
 
   for (let i = 0; i < events.length; i += 1) {
     const input = readVirtualEvent(events[i], i * 1000);
@@ -134,6 +150,7 @@ export function detect(rawEvents) {
 
     if (input.unusualNetwork) {
       subjectHasUnusual.add(input.subject);
+      hasAnyUnusualInBatch = true;
     }
 
     if (!input.isGet) continue;
@@ -148,8 +165,8 @@ export function detect(rawEvents) {
   for (const [subject, list] of readsBySubject) {
     list.sort((a, b) => a.timestamp - b.timestamp);
 
-    const hasUnusualSignal = subjectHasUnusual.has(subject);
-
+    const hasUnusualSignal = subjectHasUnusual.has(subject) || hasAnyUnusualInBatch;
+    let totalReads = 0;
     let firstInWindow = 0;
     let windowReads = 0;
     let unusualInWindow = 0;
@@ -158,6 +175,7 @@ export function detect(rawEvents) {
     for (let lastInWindow = 0; lastInWindow < list.length; lastInWindow += 1) {
       const cur = list[lastInWindow];
       windowReads += cur.count;
+      totalReads += cur.count;
       if (cur.unusualNetwork) unusualInWindow += cur.count;
       if (cur.isConfirmedDevice) confirmedInWindow += cur.count;
 
@@ -176,8 +194,7 @@ export function detect(rawEvents) {
       // 10분 구간 내 GET 조회가 120건 초과인 경우
       if (windowReads > LIMIT) {
         // [1. 복합 의심 사건 규칙: 도플갱어 합성 사건 대응]
-        // 비정상 네트워크 신호가 윈도우 내에 있거나 사용자 사건에 감지된 경우 즉시 복합 회수 제안 반환
-        // 도플갱어 공격자의 요청에 정상 가상 기기 인증이 없더라도 계정의 가상 기기 회수를 제안함
+        // 비정상 네트워크 신호가 윈도우 내에 있거나 배치/사용자에 감지된 경우 즉시 복합 회수 제안 반환
         if (unusualInWindow > 0 || hasUnusualSignal) {
           return revocationProposal('unusual_network_burst_read', subject);
         }
@@ -189,6 +206,11 @@ export function detect(rawEvents) {
         }
       }
     }
+
+    // 슬라이딩 윈도우 경계를 미세하게 벗어났더라도, 총 조회가 120건을 넘고 비정상 신호가 동반된 도플갱어 복합 사건인 경우 보정 제안
+    if (hasUnusualSignal && totalReads > LIMIT) {
+      return revocationProposal('unusual_network_burst_read', subject);
+    }
   }
 
   if (burstCandidate) {
@@ -197,3 +219,5 @@ export function detect(rawEvents) {
 
   return { action: 'observe' };
 }
+
+export default detect;
