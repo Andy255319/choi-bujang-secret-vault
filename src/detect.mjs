@@ -7,7 +7,7 @@ const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 function readVirtualEvent(event) {
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
-  // 1. 시각(at / timestamp) 추출: 문자열, 유닉스 타임스탬프, Date 객체 대응
+  // 1. 시각(at / timestamp) 추출: 문자열, 유닉스 밀리초/초 숫자, Date 객체 대응
   const rawAt = event.at ?? event.timestamp;
   let timestamp = NaN;
   if (typeof rawAt === 'string') {
@@ -19,32 +19,35 @@ function readVirtualEvent(event) {
   }
   if (!Number.isFinite(timestamp)) return null;
 
-  // 2. 가명 사용자(subject) 추출: identity.sub, subjectId, subject 대응
+  // 2. 가명 사용자(subject) 추출: 문자열 identity, identity.sub/id/userId, subjectId, subject, sub 대응
   let subject = null;
-  const identity = event.identity;
-  if (identity !== null && typeof identity === 'object' && typeof identity.sub === 'string') {
-    subject = identity.sub.trim();
-  } else if (typeof event.subjectId === 'string' && event.subjectId.trim()) {
-    subject = event.subjectId.trim();
-  } else if (typeof event.subject === 'string' && event.subject.trim()) {
-    subject = event.subject.trim();
+  const rawIdentity = event.identity;
+  if (typeof rawIdentity === 'string' && rawIdentity.trim()) {
+    subject = rawIdentity.trim();
+  } else if (rawIdentity !== null && typeof rawIdentity === 'object') {
+    const candidate = rawIdentity.sub ?? rawIdentity.id ?? rawIdentity.userId ?? rawIdentity.name;
+    if (typeof candidate === 'string' && candidate.trim()) subject = candidate.trim();
+  }
+  if (!subject) {
+    const fallback = event.subjectId ?? event.subject ?? event.sub ?? event.userId;
+    if (typeof fallback === 'string' && fallback.trim()) subject = fallback.trim();
   }
   if (!subject) return null;
 
-  // 3. 요청 종류(method) 판정: 대소문자 무관 및 읽기 기본값 호환
+  // 3. 요청 종류(method) 판정: GET, READ, 빈 문자열(기본 읽기) 호환
   const rawMethod = typeof event.method === 'string' ? event.method.trim().toUpperCase() : '';
   const isGet = rawMethod === 'GET' || rawMethod.startsWith('GET') || rawMethod === 'READ' || !rawMethod;
 
-  // 4. 비정상 네트워크 신호 추출: networkStatus, network, signals.network 전수 수용
+  // 4. 비정상 네트워크 신호 추출: networkStatus, network, signals.network, signals.networkStatus, boolean 신호 수용
   let unusualNetwork = false;
-  const rawNetwork = event.networkStatus ?? event.network;
-  if (typeof rawNetwork === 'string' && rawNetwork.trim().toLowerCase() === 'unusual') {
-    unusualNetwork = true;
-  } else if (event.signals !== null && typeof event.signals === 'object') {
-    const sigNet = event.signals.network;
-    if (typeof sigNet === 'string' && sigNet.trim().toLowerCase() === 'unusual') {
+  const rawNetwork = event.networkStatus ?? event.network ?? event.signals?.network ?? event.signals?.networkStatus;
+  if (typeof rawNetwork === 'string') {
+    const netLower = rawNetwork.trim().toLowerCase();
+    if (netLower === 'unusual' || netLower === 'suspicious' || netLower === 'abnormal') {
       unusualNetwork = true;
     }
+  } else if (rawNetwork === true || event.unusual === true || event.unusualNetwork === true) {
+    unusualNetwork = true;
   }
 
   // 5. 확인된 가상 기기 여부 판정
@@ -78,7 +81,9 @@ export function detect(rawEvents) {
     ? rawEvents
     : (rawEvents !== null && typeof rawEvents === 'object' && Array.isArray(rawEvents.events)
       ? rawEvents.events
-      : null);
+      : (rawEvents !== null && typeof rawEvents === 'object' && typeof rawEvents[Symbol.iterator] === 'function'
+        ? Array.from(rawEvents)
+        : null));
 
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
 
