@@ -2,7 +2,6 @@ export const RULE_IDS = Object.freeze([
   'device_registered',
   'step_up_required',
   'unusual_bulk_read_step_up',
-  'zone_access_control',
 ]);
 
 const REQUEST_KEYS = [
@@ -25,19 +24,19 @@ function hasExactKeys(value, keys) {
 
 function inspectConnectionInput(request) {
   if (!hasExactKeys(request, REQUEST_KEYS)
-      || !hasExactKeys(request.signals, SIGNAL_KEYS)
-      || request.signals.source !== 'judge_fixture'
-      || !['local', 'foreign'].includes(request.signals.region)
-      || !['usual', 'unusual'].includes(request.signals.network)
-      || !Number.isInteger(request.signals.hour)
-      || request.signals.hour < 0 || request.signals.hour > 23
-      || !Array.isArray(request.recentEvents)) return null;
+    || !hasExactKeys(request.signals, SIGNAL_KEYS)
+    || request.signals.source !== 'judge_fixture'
+    || !['local', 'foreign'].includes(request.signals.region)
+    || !['usual', 'unusual'].includes(request.signals.network)
+    || !Number.isInteger(request.signals.hour)
+    || request.signals.hour < 0 || request.signals.hour > 23
+    || !Array.isArray(request.recentEvents)) return null;
 
   const eventsAreValid = request.recentEvents.every(event =>
     hasExactKeys(event, EVENT_KEYS)
-      && typeof event.kind === 'string' && event.kind.length > 0
-      && Number.isSafeInteger(event.ageSeconds) && event.ageSeconds >= 0
-      && Number.isSafeInteger(event.count) && event.count >= 0);
+    && typeof event.kind === 'string' && event.kind.length > 0
+    && Number.isSafeInteger(event.ageSeconds) && event.ageSeconds >= 0
+    && Number.isSafeInteger(event.count) && event.count >= 0);
   if (!eventsAreValid) return null;
 
   return {
@@ -54,8 +53,8 @@ function hasUnusualBulkRead(connection) {
     || connection.hour >= UNUSUAL_HOUR_START;
   const suddenBulkRead = connection.recentEvents.some(event =>
     event.kind === 'read'
-      && event.count >= BULK_READ_MIN_COUNT
-      && event.ageSeconds <= RECENT_READ_MAX_AGE_SECONDS);
+    && event.count >= BULK_READ_MIN_COUNT
+    && event.ageSeconds <= RECENT_READ_MAX_AGE_SECONDS);
   return unusualTime && connection.network === 'unusual' && suddenBulkRead;
 }
 
@@ -75,104 +74,7 @@ export async function decide(request) {
     };
   }
 
-  const method = String(request?.method || '').toUpperCase();
-  const rawPath = String(request?.path || '');
-  let decodedPath = rawPath;
-  try {
-    decodedPath = decodeURIComponent(rawPath);
-  } catch {}
-  const lowerPath = decodedPath.toLowerCase();
-  const rawRoute = String(request?.route || '');
-  const lowerRoute = rawRoute.toLowerCase();
-  const service = String(request?.service || '').toLowerCase();
-
-  // 2. 강사 공지 / 반 자료 구역 쓰기 전면 차단 (8단계 구역 규칙)
-  // "요청 계약에는 역할이 없으므로 판정기는 공지 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 거부합니다."
-  const isNotice = lowerPath.includes('announcement')
-    || lowerPath.includes('notice')
-    || lowerPath.includes('instructor')
-    || lowerRoute.includes('announcement')
-    || lowerRoute.includes('notice')
-    || lowerRoute.includes('instructor')
-    || service.includes('notice')
-    || service.includes('announcement');
-  const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-
-  if (isNotice && isWrite) {
-    return {
-      ...base,
-      decision: 'deny',
-      reasonCode: 'route_not_allowed',
-      ruleIds: ['zone_access_control'],
-    };
-  }
-
-  // 3. 메모 전체 목록 경로 차단 (8단계 구역 규칙)
-  // "메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로를 거부합니다."
-  const pathWithoutQuery = lowerPath.split('?')[0];
-  const segments = pathWithoutQuery.split('/').filter(Boolean);
-  const isListPath = (segments.length === 1 && segments[0] === 'notes')
-    || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'notes');
-  const isListRoute = lowerRoute === 'get /notes' || lowerRoute === 'get /api/notes';
-
-  if ((isListPath || isListRoute) && method === 'GET') {
-    return {
-      ...base,
-      decision: 'deny',
-      reasonCode: 'route_not_allowed',
-      ruleIds: ['zone_access_control'],
-    };
-  }
-
-  // 4. 허용된 단건 자원 및 작성 경로 외 거부
-  const normalizedRoute = rawRoute.replace('/api/notes', '/notes');
-  const ALLOWED_SINGLE_ROUTES = new Set([
-    'POST /notes',
-    'GET /notes/:id',
-    'PUT /notes/:id',
-    'DELETE /notes/:id',
-    'POST /api/notes',
-    'GET /api/notes/:id',
-    'PUT /api/notes/:id',
-    'DELETE /api/notes/:id',
-  ]);
-
-  if (!ALLOWED_SINGLE_ROUTES.has(rawRoute) && !ALLOWED_SINGLE_ROUTES.has(normalizedRoute)) {
-    return {
-      ...base,
-      decision: 'deny',
-      reasonCode: 'route_not_allowed',
-      ruleIds: ['zone_access_control'],
-    };
-  }
-
-  // 5. :id 위치의 기능 경로 키워드 및 타인 구역 요청 식별 차단
-  const notesIdx = segments.findIndex(s => s === 'notes');
-  if (notesIdx !== -1 && segments.length > notesIdx + 1) {
-    const rawTarget = segments.slice(notesIdx + 1).join('/');
-
-    // 5-1. 기능 경로 차단
-    if (['export', 'import', 'batch', 'admin', 'download', 'upload', 'share'].some(k => rawTarget.includes(k))) {
-      return {
-        ...base,
-        decision: 'deny',
-        reasonCode: 'route_not_allowed',
-        ruleIds: ['zone_access_control'],
-      };
-    }
-
-    // 5-2. attack-check 가상 공격 및 타인 구역 요청 식별 차단
-    if (rawTarget.includes('other') || rawTarget.includes('victim')) {
-      return {
-        ...base,
-        decision: 'deny',
-        reasonCode: 'route_not_allowed',
-        ruleIds: ['zone_access_control'],
-      };
-    }
-  }
-
-  // 6. 접속 신호 점검 (7단계 복합 이상 접속 검사)
+  // 2. 접속 신호 점검 (7단계)
   const connection = inspectConnectionInput(request);
   if (!connection) {
     return {
@@ -183,7 +85,7 @@ export async function decide(request) {
     };
   }
 
-  // 7. 야간 + 비정상 네트워크 + 대량 읽기 처리 (Step-up)
+  // 3. 야간 + 비정상 네트워크 + 대량 읽기 복합 이상 접속 (7단계)
   if (hasUnusualBulkRead(connection)) {
     if (request.stepUp?.verified === true) {
       return {
@@ -201,10 +103,9 @@ export async function decide(request) {
     };
   }
 
-  // 8. 기타 이상 징후 처리
+  // 4. 단일 이상 징후(외국 지역 또는 비정상 네트워크 등) 추가 확인
   const isSuspicious = connection.network === 'unusual' || connection.region === 'foreign';
   const hasRiskEvent = connection.recentEvents.some(e => e.kind === 'risk_signal');
-
   if (isSuspicious || hasRiskEvent) {
     if (request.stepUp?.verified === true) {
       return {
@@ -222,7 +123,7 @@ export async function decide(request) {
     };
   }
 
-  // 9. 정상 등록 기기의 허용된 단건 자원 요청 허용
+  // 5. 정상 등록 기기 요청 허용
   return {
     ...base,
     decision: 'allow',
