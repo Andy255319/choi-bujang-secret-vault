@@ -5,6 +5,33 @@ const BURST_LIMIT = 120;
 const NORMAL_READ_LIMIT = 30;
 const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 
+// 스트리밍 단건 사건 입력(이벤트별 순차 detect 호출)을 위한 내부 기록
+const streamingHistory = [];
+
+function addStreamingEvent(rawEvent) {
+  const parsed = readVirtualEvent(rawEvent);
+  if (!parsed) return;
+  if (streamingHistory.length > 0) {
+    const lastParsed = readVirtualEvent(streamingHistory[streamingHistory.length - 1]);
+    if (parsed.timestamp > 0 && lastParsed?.timestamp > 0 && parsed.timestamp < lastParsed.timestamp - 5000) {
+      streamingHistory.length = 0;
+    }
+  }
+  streamingHistory.push(rawEvent);
+  if (parsed.timestamp > 0) {
+    while (streamingHistory.length > 0) {
+      const first = readVirtualEvent(streamingHistory[0]);
+      if (first && first.timestamp > 0 && parsed.timestamp - first.timestamp > WINDOW_MS) {
+        streamingHistory.shift();
+      } else {
+        break;
+      }
+    }
+  } else if (streamingHistory.length > 250) {
+    streamingHistory.splice(0, streamingHistory.length - 200);
+  }
+}
+
 function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
   let event = rawEvent;
   if (typeof event === 'string') {
@@ -49,15 +76,17 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
     subject = 'learner_fixture';
   }
 
-  // 3. 요청 종류(method) 판정
+  // 3. 요청 종류(method / route) 판정
   const rawMethod = typeof event.method === 'string'
     ? event.method.trim().toUpperCase()
-    : (typeof event.httpMethod === 'string'
-      ? event.httpMethod.trim().toUpperCase()
-      : (typeof event.kind === 'string'
-        ? event.kind.trim().toUpperCase()
-        : 'GET'));
-  const isGet = rawMethod === 'GET' || rawMethod === 'READ' || !rawMethod;
+    : (typeof event.route === 'string'
+      ? event.route.trim().toUpperCase()
+      : (typeof event.httpMethod === 'string'
+        ? event.httpMethod.trim().toUpperCase()
+        : (typeof event.kind === 'string'
+          ? event.kind.trim().toUpperCase()
+          : 'GET')));
+  const isGet = rawMethod.startsWith('GET') || rawMethod === 'READ' || !rawMethod;
 
   // 4. 건수(count / recentEvents) 추출
   let count = 1;
@@ -74,14 +103,18 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
   // 5. 비정상 네트워크 신호 추출
   let unusualNetwork = false;
   const net = event.networkStatus ?? event.network;
-  if (typeof net === 'string' && net.trim().toLowerCase() === 'unusual') {
+  if (typeof net === 'string' && net.trim().toLowerCase().includes('unusual')) {
+    unusualNetwork = true;
+  } else if (net && typeof net === 'object' && typeof net.status === 'string' && net.status.trim().toLowerCase().includes('unusual')) {
     unusualNetwork = true;
   } else if (event.signals && typeof event.signals === 'object') {
     const sigNet = event.signals.network ?? event.signals.networkStatus;
-    if (typeof sigNet === 'string' && sigNet.trim().toLowerCase() === 'unusual') {
+    if (typeof sigNet === 'string' && sigNet.trim().toLowerCase().includes('unusual')) {
+      unusualNetwork = true;
+    } else if (event.signals.unusualNetwork === true || event.signals.unusual === true) {
       unusualNetwork = true;
     }
-  } else if (event.unusualNetwork === true || event.unusual === true) {
+  } else if (event.unusualNetwork === true || event.unusual === true || event.suspicious === true) {
     unusualNetwork = true;
   }
 
@@ -90,7 +123,7 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
   const isConfirmedDevice = (vd !== null
     && typeof vd === 'object'
     && !Array.isArray(vd)
-    && vd.verified === true
+    && (vd.verified === true || vd.verified === 'true')
     && vd.id === VIRTUAL_DEVICE_ID) || event.deviceRegistered === true;
 
   return {
@@ -112,32 +145,7 @@ function revocationProposal(reasonCode, subject) {
   };
 }
 
-export function detect(rawEvents) {
-  let inputSource = rawEvents;
-  if (typeof inputSource === 'string') {
-    try { inputSource = JSON.parse(inputSource); } catch {}
-  }
-
-  const events = Array.isArray(inputSource)
-    ? inputSource
-    : (inputSource !== null && typeof inputSource === 'object'
-      ? (Array.isArray(inputSource.events)
-        ? inputSource.events
-        : (Array.isArray(inputSource.alerts)
-          ? inputSource.alerts
-          : (Array.isArray(inputSource.data)
-            ? inputSource.data
-            : (Array.isArray(inputSource.requests)
-              ? inputSource.requests
-              : (Array.isArray(inputSource.records)
-                ? inputSource.records
-                : (Array.isArray(inputSource.items)
-                  ? inputSource.items
-                  : [inputSource]))))))
-      : null);
-
-  if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
-
+function evaluateEvents(events) {
   const readsBySubject = new Map();
   const subjectHasUnusual = new Set();
   let hasAnyUnusualInBatch = false;
@@ -228,6 +236,48 @@ export function detect(rawEvents) {
   }
 
   return { action: 'observe' };
+}
+
+export function detect(rawEvents) {
+  let inputSource = rawEvents;
+  if (typeof inputSource === 'string') {
+    try { inputSource = JSON.parse(inputSource); } catch {}
+  }
+
+  // 배치(배열) 전달인 경우
+  if (Array.isArray(inputSource)) {
+    // 다건 배치인 경우 해당 배치를 독립적으로 평가하고 스트리밍 히스토리 리셋
+    if (inputSource.length > 1) {
+      streamingHistory.length = 0;
+      return evaluateEvents(inputSource);
+    }
+    // 단건 배열인 경우 배치 평가 후 스트리밍 히스토리에도 누적
+    const singleResult = evaluateEvents(inputSource);
+    if (inputSource.length === 1 && inputSource[0]) {
+      addStreamingEvent(inputSource[0]);
+      if (singleResult.action === 'observe') {
+        const streamResult = evaluateEvents(streamingHistory);
+        if (streamResult.action !== 'observe') return streamResult;
+      }
+    }
+    return singleResult;
+  }
+
+  // 객체 래핑 배열 전달인 경우 (events, alerts, data 등)
+  if (inputSource !== null && typeof inputSource === 'object') {
+    for (const key of ['events', 'alerts', 'data', 'requests', 'records', 'items', 'logs', 'entries', 'history']) {
+      if (Array.isArray(inputSource[key])) {
+        streamingHistory.length = 0;
+        return evaluateEvents(inputSource[key]);
+      }
+    }
+
+    // 단건 이벤트 객체가 직접 전달된 경우: 스트리밍 기록에 누적하고 평가
+    addStreamingEvent(inputSource);
+    return evaluateEvents(streamingHistory);
+  }
+
+  throw new TypeError('invalid_detection_events');
 }
 
 export default detect;
