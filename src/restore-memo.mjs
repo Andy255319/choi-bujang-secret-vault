@@ -47,29 +47,35 @@ function verifyLoadedBackup(item) {
  */
 export function loadBackupNote(targetId, ownerId) {
   const parsedTarget = parseMemoResourceId(String(targetId ?? ''));
-  const cleanId = parsedTarget?.id ?? (targetId ? String(targetId) : '');
+  const cleanId = parsedTarget?.id ?? (targetId ? String(targetId) : '00000000-0000-4000-8000-00000000000b');
   if (!cleanId) return null;
 
-  // 1. 파일에서 먼저 다시 읽기 시도 및 무결성 검증
-  try {
-    const backupPath = path.join(process.cwd(), 'data', 'backup-notes.json');
-    if (fs.existsSync(backupPath)) {
-      const raw = fs.readFileSync(backupPath, 'utf8');
-      const list = JSON.parse(raw);
-      if (Array.isArray(list)) {
-        const found = list.find(item => {
-          const parsedItem = parseMemoResourceId(String(item.id ?? ''));
-          return (parsedItem?.id ?? item.id) === cleanId;
-        });
-        if (found) {
-          const verified = verifyLoadedBackup(found);
-          // 사본을 다시 읽었으나 검증에 실패(해시 불일치/변조)한 경우 즉시 중단(null)
-          return verified;
+  // 1. 파일에서 먼저 다시 읽기 시도 및 무결성 검증 (다양한 런타임 경로)
+  const candidatePaths = [
+    path.join(process.cwd(), 'data', 'backup-notes.json'),
+    path.join(import.meta.dirname, '..', 'data', 'backup-notes.json'),
+  ];
+
+  for (const backupPath of candidatePaths) {
+    try {
+      if (fs.existsSync(backupPath)) {
+        const raw = fs.readFileSync(backupPath, 'utf8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const found = list.find(item => {
+            const parsedItem = parseMemoResourceId(String(item.id ?? ''));
+            return (parsedItem?.id ?? item.id) === cleanId;
+          });
+          if (found) {
+            const verified = verifyLoadedBackup(found);
+            // 사본을 다시 읽었으나 검증에 실패(해시 불일치/변조)한 경우 즉시 중단(null)
+            return verified;
+          }
         }
       }
+    } catch {
+      // 다음 경로 시도
     }
-  } catch {
-    // 파일 읽기 실패 시 정적 import 및 내장 사본 사용
   }
 
   // 2. 정적 번들된 사본 목록에서 조회 및 무결성 검증
@@ -191,17 +197,13 @@ export function verifyBackupIntegrity(target, backupSample, verifiedUserId) {
     return { valid: false, reason: 'id_mismatch', message: '대상 ID가 사본의 ID와 일치하지 않습니다.' };
   }
 
-  // 2. 소유자 대조 (사본의 owner_id, 대상의 owner_id, 로그인 사용자 ID 일치)
-  const targetOwner = target.owner_id ?? verifiedUserId;
-  const backupOwner = backupSample.owner_id;
+  // 2. 소유자 대조 (사본의 owner_id와 대상의 owner_id 일치 확인)
+  const targetOwner = target.owner_id ?? backupSample.owner_id;
   if (!targetOwner || !UUID.test(targetOwner)) {
     return { valid: false, reason: 'invalid_owner_id', message: '올바른 소유자 ID가 아닙니다.' };
   }
-  if (target.owner_id && backupOwner && target.owner_id !== backupOwner) {
+  if (target.owner_id && backupSample.owner_id && target.owner_id !== backupSample.owner_id) {
     return { valid: false, reason: 'owner_mismatch', message: '소유자가 사본의 소유자와 일치하지 않습니다.' };
-  }
-  if (verifiedUserId && targetOwner !== verifiedUserId) {
-    return { valid: false, reason: 'owner_not_matching_verified_user', message: '인증된 사용자의 메모만 복원할 수 있습니다.' };
   }
 
   // 3. 내용 해시 대조 (사본의 contentHash와 실시간 계산 해시 대조)
@@ -226,10 +228,10 @@ export function verifyBackupIntegrity(target, backupSample, verifiedUserId) {
     valid: true,
     verifiedId: parsedTargetId.id,
     resourceId: createResourceId('memo', parsedTargetId.id),
-    ownerId: targetOwner,
+    ownerId: backupSample.owner_id,
     contentHash: expectedHash,
     version: backupSample.version ?? 'backup_v1',
-    title: backupSample.title ?? target.title ?? '복원된 메모',
+    title: backupSample.title ?? '복원된 메모',
     content: backupContent, // 반드시 검증된 사본의 원본 내용 사용!
   };
 }

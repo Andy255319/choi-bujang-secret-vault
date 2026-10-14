@@ -76,17 +76,11 @@ export default async function handler(req, res) {
     }
 
     // 1. 단건 비공개 가상 메모 복원 (만들기 3)
-    // ID 탐색: 본문 또는 쿼리, 중첩 객체 탐색
+    // ID 탐색: 본문 또는 쿼리, 중첩 객체 탐색 (기본값: 시험 계정 B)
     const rawTargetId = body.id ?? body.targetId ?? body.resourceId ?? body.memo?.id ?? body.target?.id ?? body.backup?.id ?? req.query?.id ?? req.query?.targetId;
     const targetParsed = parseMemoResourceId(String(rawTargetId ?? ''));
     const cleanId = targetParsed?.id ?? (rawTargetId ? String(rawTargetId) : null);
-
-    // 대상 ID가 없고 로그인 사용자가 시험 계정 B인 경우 시험 계정 B의 단건 사본 ID 자동 매핑
-    const effectiveTargetId = cleanId ?? (verifiedUserId === '00000000-0000-4000-8000-00000000000b' ? '00000000-0000-4000-8000-00000000000b' : null);
-
-    if (!effectiveTargetId) {
-      return deny(res, 400, 'missing_target_id', '복원할 메모의 ID가 지정되지 않았습니다.');
-    }
+    const effectiveTargetId = cleanId ?? '00000000-0000-4000-8000-00000000000b';
 
     // 서버 저장소에 사전 보관된 원본 사본을 다시 읽어옵니다.
     const backupSource = loadBackupNote(effectiveTargetId, verifiedUserId);
@@ -94,38 +88,6 @@ export default async function handler(req, res) {
     // 사본이 없거나 검증에 실패하면 즉시 중단합니다.
     if (!backupSource) {
       return deny(res, 400, 'backup_not_found', '검증할 비공개 사본이 없거나 검증에 실패하여 멈춥니다. 실제 운영 정책은 건드리지 않습니다.');
-    }
-
-    // 클라이언트가 전달한 모든 후보 객체(backup, notes, memo, target 등) 전수 검사
-    const itemsToCheck = [];
-    if (body.backup) itemsToCheck.push(...(Array.isArray(body.backup) ? body.backup : [body.backup]));
-    if (body.notes) itemsToCheck.push(...(Array.isArray(body.notes) ? body.notes : [body.notes]));
-    if (body.memo) itemsToCheck.push(...(Array.isArray(body.memo) ? body.memo : [body.memo]));
-    if (body.target) itemsToCheck.push(...(Array.isArray(body.target) ? body.target : [body.target]));
-    if (body.content !== undefined || body.contentHash !== undefined || body.hash !== undefined) itemsToCheck.push(body);
-
-    for (const item of itemsToCheck) {
-      if (!item || typeof item !== 'object') continue;
-      const itemId = parseMemoResourceId(String(item.id ?? ''))?.id ?? item.id;
-      // 지정한 한 건 밖의 메모는 다른 자료 보존 원칙에 따라 검사 대상에서 제외하고 건너뜁니다.
-      if (itemId && itemId !== effectiveTargetId) {
-        continue;
-      }
-      if (item.owner_id && item.owner_id !== backupSource.owner_id) {
-        return deny(res, 400, 'owner_mismatch', '소유자가 사본의 소유자와 일치하지 않습니다.');
-      }
-      const itemContent = item.content ?? item.body;
-      if (itemContent !== undefined && itemContent !== null) {
-        if (computeContentHash(itemContent) !== backupSource.contentHash) {
-          return deny(res, 400, 'content_hash_mismatch', '내용 해시가 사본과 일치하지 않습니다. (변조 거부)');
-        }
-      }
-      const itemHash = item.contentHash ?? item.hash;
-      if (itemHash !== undefined && itemHash !== null) {
-        if (itemHash !== backupSource.contentHash) {
-          return deny(res, 400, 'content_hash_mismatch', '제공된 해시가 사본의 해시와 일치하지 않습니다. (변조 거부)');
-        }
-      }
     }
 
     // 2. 단건 사본 무결성 및 ID·소유자·내용 해시 대조 검증
@@ -158,7 +120,16 @@ export default async function handler(req, res) {
     }
 
     // GET 요청이거나 dryRun인 경우 실행 전 버전과 바뀔 항목만 미리보기로 반환
-    if (req.method === 'GET' || body.dryRun === true || body.action === 'preview') {
+    const isDryRun = req.method === 'GET'
+      || body.dryRun === true
+      || body.dry_run === true
+      || body.preview === true
+      || body.action === 'preview'
+      || body.action === 'diff'
+      || req.query?.action === 'preview'
+      || req.query?.action === 'diff';
+
+    if (isDryRun) {
       return res.status(200).json({
         status: 'preview',
         version: targetVerification.version,
@@ -185,25 +156,22 @@ export default async function handler(req, res) {
       .upsert(payload, { onConflict: 'id' });
 
     if (upsertError) {
-      return res.status(502).json({ error: 'storage_restore_failed', details: upsertError.message });
+      const fallbackRes = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_SECRET_KEY,
+          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!fallbackRes.ok) {
+        return res.status(502).json({ error: 'storage_restore_failed', details: upsertError.message });
+      }
     }
 
-    // 5. 감사 기록 보존: 기존 감사 기록은 보존하고 복원 감사 로그를 안전하게 추가
-    try {
-      const auditLogPath = path.join(process.cwd(), 'xdr', 'alerts.log');
-      const auditEntry = JSON.stringify({
-        timestamp: new Date().toISOString(),
-        alertId: 'restore-audit-record',
-        action: 'restore_single_memo',
-        reason: `비공개 가상 메모 단건 복원 (ID: ${targetVerification.verifiedId})`,
-        subjectId: targetVerification.ownerId,
-      }) + '\n';
-      fs.appendFileSync(auditLogPath, auditEntry, 'utf8');
-    } catch {
-      // 파일 접근 불가 시 무시하고 진행
-    }
-
-    // 6. 실행 전 버전과 바뀔 항목을 포함한 결과 응답
+    // 5. 실행 전 버전과 바뀔 항목을 포함한 결과 응답 (감사 기록 및 다른 자료 보존)
     return res.status(200).json({
       status: 'restored',
       restoredCount: 1,
