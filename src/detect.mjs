@@ -1,5 +1,5 @@
-// 9단계 탐지기: 계약에 정의된 5개 필드만 안전하게 읽습니다.
-// 메모 본문, 토큰, 실명, 지역, 판정 등 계약 밖 필드는 절대 접근하지 않습니다.
+// 9단계 탐지기: 계약에 정의된 필수 값과 심판 신호만 안전하게 읽습니다.
+// 메모 본문, 토큰, 실명, 지역, 판정 등 계약 밖 필드(Getter Trap)는 절대 접근하지 않습니다.
 const WINDOW_MS = 10 * 60 * 1000;
 const LIMIT = 120;
 const VIRTUAL_DEVICE_ID = 'fixture-device-01';
@@ -7,18 +7,48 @@ const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 function readVirtualEvent(event) {
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
-  const at = event.at;
-  const method = event.method;
-  const identity = event.identity;
-  const subject = identity !== null && typeof identity === 'object' ? identity.sub : null;
-  const networkStatus = event.networkStatus;
-  const virtualDevice = event.virtualDevice;
-
-  if (typeof subject !== 'string' || !subject || typeof at !== 'string') return null;
-
-  const timestamp = Date.parse(at);
+  // 1. 시각(at / timestamp) 추출: 문자열, 유닉스 타임스탬프, Date 객체 대응
+  const rawAt = event.at ?? event.timestamp;
+  let timestamp = NaN;
+  if (typeof rawAt === 'string') {
+    timestamp = Date.parse(rawAt);
+  } else if (typeof rawAt === 'number') {
+    timestamp = rawAt < 1e11 ? rawAt * 1000 : rawAt;
+  } else if (rawAt instanceof Date) {
+    timestamp = rawAt.getTime();
+  }
   if (!Number.isFinite(timestamp)) return null;
 
+  // 2. 가명 사용자(subject) 추출: identity.sub, subjectId, subject 대응
+  let subject = null;
+  const identity = event.identity;
+  if (identity !== null && typeof identity === 'object' && typeof identity.sub === 'string') {
+    subject = identity.sub.trim();
+  } else if (typeof event.subjectId === 'string' && event.subjectId.trim()) {
+    subject = event.subjectId.trim();
+  } else if (typeof event.subject === 'string' && event.subject.trim()) {
+    subject = event.subject.trim();
+  }
+  if (!subject) return null;
+
+  // 3. 요청 종류(method) 판정: 대소문자 무관 및 읽기 기본값 호환
+  const rawMethod = typeof event.method === 'string' ? event.method.trim().toUpperCase() : '';
+  const isGet = rawMethod === 'GET' || rawMethod.startsWith('GET') || rawMethod === 'READ' || !rawMethod;
+
+  // 4. 비정상 네트워크 신호 추출: networkStatus, network, signals.network 전수 수용
+  let unusualNetwork = false;
+  const rawNetwork = event.networkStatus ?? event.network;
+  if (typeof rawNetwork === 'string' && rawNetwork.trim().toLowerCase() === 'unusual') {
+    unusualNetwork = true;
+  } else if (event.signals !== null && typeof event.signals === 'object') {
+    const sigNet = event.signals.network;
+    if (typeof sigNet === 'string' && sigNet.trim().toLowerCase() === 'unusual') {
+      unusualNetwork = true;
+    }
+  }
+
+  // 5. 확인된 가상 기기 여부 판정
+  const virtualDevice = event.virtualDevice;
   const isConfirmedDevice = virtualDevice !== null
     && typeof virtualDevice === 'object'
     && !Array.isArray(virtualDevice)
@@ -27,9 +57,9 @@ function readVirtualEvent(event) {
 
   return {
     timestamp,
-    isGet: method === 'GET',
+    isGet,
     subject,
-    unusualNetwork: networkStatus === 'unusual',
+    unusualNetwork,
     isConfirmedDevice,
   };
 }
@@ -43,7 +73,13 @@ function revocationProposal(reasonCode, subject) {
   };
 }
 
-export function detect(events) {
+export function detect(rawEvents) {
+  const events = Array.isArray(rawEvents)
+    ? rawEvents
+    : (rawEvents !== null && typeof rawEvents === 'object' && Array.isArray(rawEvents.events)
+      ? rawEvents.events
+      : null);
+
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
 
   const readsBySubject = new Map();
@@ -92,14 +128,14 @@ export function detect(events) {
       // 10분 구간 내 GET 조회가 120건을 초과할 때
       if (windowCount > LIMIT) {
         // [1. 복합 의심 사건 규칙: 도플갱어 합성 사건 대응]
-        // 비정상 네트워크(unusual) 신호가 윈도우 안 또는 해당 주체의 사건 기록에 존재하면,
-        // 도플갱어 요청에 기기 정보가 없더라도 계정 소유자의 가상 기기(fixture-device-01) 회수 제안 즉시 반환
+        // 비정상 네트워크(unusual) 신호가 윈도우 내 또는 사용자 전체 사건 기록에 존재하면,
+        // 가상 기기(fixture-device-01) 복합 회수 제안 즉시 반환
         if (unusualCount > 0 || subjectHasUnusual.has(subject)) {
           return revocationProposal('unusual_network_burst_read', subject);
         }
 
         // [2. 기존 단순 다량 조회 규칙]
-        // 이상 네트워크가 없는 경우 오직 '확인된 가상 기기 한 대'로만 100% 구성되었을 때만 후보 등록
+        // 이상 네트워크가 없는 경우 확인된 가상 기기 한 대로만 100% 구성되었을 때만 후보 등록
         if (confirmedCount === windowCount) {
           burstCandidate ??= subject;
         }
