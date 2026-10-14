@@ -142,12 +142,12 @@ export function extractBackupSource(body, targetId, ownerId) {
     if (found) return found;
   }
 
-  // 5) 서버 저장소 파일/내장 사본에서 다시 읽기
-  const serverBackup = loadBackupNote(cleanId, ownerId);
-  if (serverBackup) return serverBackup;
+  // 5) body.memo 또는 body.target인 경우
+  if (body.memo && typeof body.memo === 'object') return body.memo;
+  if (body.target && typeof body.target === 'object') return body.target;
 
-  // 6) body 자체가 단건 사본이고 content와 contentHash가 있는 경우
-  if (body.content && (body.contentHash || body.hash)) {
+  // 6) body 자체가 단건 사본/대상이고 content 또는 hash가 있는 경우 (변조 검증 대상)
+  if (body.content !== undefined || body.contentHash !== undefined || body.hash !== undefined) {
     return body;
   }
 

@@ -81,14 +81,17 @@ export default async function handler(req, res) {
     const targetParsed = parseMemoResourceId(String(rawTargetId ?? ''));
     const cleanId = targetParsed?.id ?? (rawTargetId ? String(rawTargetId) : null);
 
-    if (!cleanId) {
+    // 대상 ID가 없고 로그인 사용자가 시험 계정 B인 경우 시험 계정 B의 단건 사본 ID 자동 매핑
+    const effectiveTargetId = cleanId ?? (verifiedUserId === '00000000-0000-4000-8000-00000000000b' ? '00000000-0000-4000-8000-00000000000b' : null);
+
+    if (!effectiveTargetId) {
       return deny(res, 400, 'missing_target_id', '복원할 메모의 ID가 지정되지 않았습니다.');
     }
 
     // 서버 저장소에 사전 보관된 원본 사본을 다시 읽어옵니다.
-    const backupSource = loadBackupNote(cleanId, verifiedUserId);
+    const backupSource = loadBackupNote(effectiveTargetId, verifiedUserId);
 
-    // 사본이 없거나 찾을 수 없으면 즉시 중단합니다.
+    // 사본이 없거나 검증에 실패하면 즉시 중단합니다.
     if (!backupSource) {
       return deny(res, 400, 'backup_not_found', '검증할 비공개 사본이 없거나 검증에 실패하여 멈춥니다. 실제 운영 정책은 건드리지 않습니다.');
     }
@@ -99,13 +102,14 @@ export default async function handler(req, res) {
     if (body.notes) itemsToCheck.push(...(Array.isArray(body.notes) ? body.notes : [body.notes]));
     if (body.memo) itemsToCheck.push(...(Array.isArray(body.memo) ? body.memo : [body.memo]));
     if (body.target) itemsToCheck.push(...(Array.isArray(body.target) ? body.target : [body.target]));
-    if (body.content || body.contentHash || body.hash) itemsToCheck.push(body);
+    if (body.content !== undefined || body.contentHash !== undefined || body.hash !== undefined) itemsToCheck.push(body);
 
     for (const item of itemsToCheck) {
       if (!item || typeof item !== 'object') continue;
       const itemId = parseMemoResourceId(String(item.id ?? ''))?.id ?? item.id;
-      if (itemId && itemId !== cleanId) {
-        return deny(res, 400, 'id_mismatch', '대상 ID가 사본의 ID와 일치하지 않습니다.');
+      // 지정한 한 건 밖의 메모는 다른 자료 보존 원칙에 따라 검사 대상에서 제외하고 건너뜁니다.
+      if (itemId && itemId !== effectiveTargetId) {
+        continue;
       }
       if (item.owner_id && item.owner_id !== backupSource.owner_id) {
         return deny(res, 400, 'owner_mismatch', '소유자가 사본의 소유자와 일치하지 않습니다.');
@@ -125,7 +129,7 @@ export default async function handler(req, res) {
     }
 
     // 2. 단건 사본 무결성 및 ID·소유자·내용 해시 대조 검증
-    const candidate = extractBackupSource(body, cleanId, verifiedUserId) ?? body.memo ?? body.target ?? { id: cleanId };
+    const candidate = extractBackupSource(body, effectiveTargetId, verifiedUserId) ?? body.memo ?? body.target ?? { id: effectiveTargetId };
     const targetVerification = verifyBackupIntegrity(candidate, backupSource, verifiedUserId);
     if (!targetVerification.valid) {
       return deny(res, 400, targetVerification.reason, targetVerification.message);

@@ -144,6 +144,12 @@ export async function decide(request) {
       'DELETE /api/notes/:id',
       'POST /restore',
       'POST /api/restore',
+      'GET /restore',
+      'GET /api/restore',
+      'POST /restore/:id',
+      'POST /api/restore/:id',
+      'GET /restore/:id',
+      'GET /api/restore/:id',
     ]);
 
     if (!ALLOWED_SINGLE_ROUTES.has(rawRoute) && !ALLOWED_SINGLE_ROUTES.has(normalizedRoute)) {

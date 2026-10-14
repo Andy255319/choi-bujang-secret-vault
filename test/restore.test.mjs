@@ -158,3 +158,31 @@ test('배열 형태의 사본이나 변조된 내용이 전달된 경우 사본 
   assert.match(verifyResult.reason, /content_hash/u);
 });
 
+test('GET /api/restore 사전 조회 요청은 decider의 zone_access_control에서 허용된다', async () => {
+  const { decide } = await import('../src/decider.mjs');
+  const previewReq = {
+    schema: 'aleph.decision.v1',
+    requestId: 'preview-req-1',
+    classId: 'c1',
+    projectId: 'p1',
+    subjectId: TEST_ACCOUNT_B_ID,
+    deviceId: '0123456789abcdef',
+    service: 'notes',
+    method: 'GET',
+    path: '/api/restore',
+    route: 'GET /api/restore',
+    queryLength: 0,
+    querySha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    at: new Date().toISOString(),
+    policyRevision: 1,
+    deviceRegistered: true,
+    stepUp: { verified: false, authAgeSeconds: null },
+    recentEvents: [],
+    signals: { source: 'judge_fixture', region: 'local', network: 'usual', hour: 12 },
+  };
+
+  const result = await decide(previewReq);
+  assert.equal(result.decision, 'allow');
+  assert.equal(result.reasonCode, 'approved');
+});
+
