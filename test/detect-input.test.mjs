@@ -48,4 +48,25 @@ test('비정상 네트워크만 있거나 지역 정보만 있으면 회수 제�
     networkStatus: 'unusual',
     virtualDevice: confirmedDevice,
   })));
-  const regionBurst = detect(Array.from({ length: 121 }, (_, index
+  const regionBurst = detect(Array.from({ length: 121 }, (_, index) => virtualRead(index, {
+    region: 'fixture-new-region',
+    virtualDevice: confirmedDevice,
+  })));
+  assert.deepEqual(unusualOnly, { action: 'observe' });
+  assert.deepEqual(regionBurst, { action: 'observe' });
+});
+
+test('탐지기는 메모 내용·토큰·실명 등 민감 필드를 읽지 않는다', () => {
+  const event = {
+    at: new Date(START).toISOString(),
+    method: 'GET',
+    identity: { sub: 'learner_fixture' },
+  };
+  for (const key of ['memoContent', 'token', 'realName']) {
+    Object.defineProperty(event, key, {
+      enumerable: true,
+      get() { throw new Error(`unexpected_field_read:${key}`); },
+    });
+  }
+  assert.deepEqual(detect([event]), { action: 'observe' });
+});
