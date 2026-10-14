@@ -41,23 +41,31 @@ export default async function handler(req, res) {
     const verifiedUserId = user.userId;
 
     const body = req.body ?? {};
-    const candidate = body.memo ?? body;
+    const candidate = body.memo ?? body.target ?? body;
     const targetId = candidate.id ?? candidate.resourceId ?? body.id ?? body.backup?.id;
 
     if (!targetId) {
       return deny(res, 400, 'missing_target_id', '복원할 메모의 ID가 지정되지 않았습니다.');
     }
 
-    // 1. 사본(Backup) 확보:
-    // 클라이언트가 명시적인 사본 원본 객체(backup)를 제공했거나, 저장소의 검증된 사본 파일에서 다시 읽어옵니다.
-    let backupSource = null;
-    if (body.backup && typeof body.backup === 'object' && body.backup.content && (body.backup.contentHash || body.backup.hash)) {
-      backupSource = body.backup;
-    } else {
-      backupSource = loadBackupNote(targetId);
+    // 1. 사본(Backup) 원본 확보:
+    // 서버에 보관된 사전 검증 사본을 다시 읽어옵니다.
+    let backupSource = loadBackupNote(targetId, verifiedUserId);
+
+    // 만약 서버 저장소에 없고 클라이언트가 사본(backup) 객체를 보낸 경우:
+    if (!backupSource && body.backup && typeof body.backup === 'object') {
+      const bContent = body.backup.content ?? body.backup.body;
+      const bHash = body.backup.contentHash ?? body.backup.hash;
+      if (bContent && bHash) {
+        if (computeContentHash(bContent) === bHash) {
+          backupSource = body.backup;
+        } else {
+          return deny(res, 400, 'backup_hash_mismatch', '제공된 사본의 내용 해시가 일치하지 않아 멈춥니다.');
+        }
+      }
     }
 
-    // 사본이 없거나 찾을 수 없으면 즉시 중단
+    // 사본이 없거나 검증할 수 없으면 즉시 중단합니다.
     if (!backupSource) {
       return deny(res, 400, 'backup_not_found', '검증할 비공개 사본이 없거나 검증에 실패하여 멈춥니다. 실제 운영 정책은 건드리지 않습니다.');
     }
