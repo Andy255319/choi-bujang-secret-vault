@@ -27,7 +27,7 @@ function addStreamingEvent(rawEvent) {
         break;
       }
     }
-  } else if (streamingHistory.length > 250) {
+  } else if (streamingHistory.length > 300) {
     streamingHistory.splice(0, streamingHistory.length - 200);
   }
 }
@@ -39,8 +39,11 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
   }
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
-  // 래핑 해제 (event.event, event.record, event.request 등)
-  if (event.event && typeof event.event === 'object' && !Array.isArray(event.event)) event = event.event;
+  // 래핑 해제 (event.data, event.payload, event.record, event.event, event.request 등)
+  // 단, 프록시 트랩 속성은 건드리지 않음
+  if (event.data && typeof event.data === 'object' && !Array.isArray(event.data)) event = event.data;
+  else if (event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)) event = event.payload;
+  else if (event.event && typeof event.event === 'object' && !Array.isArray(event.event)) event = event.event;
   else if (event.record && typeof event.record === 'object' && !Array.isArray(event.record)) event = event.record;
   else if (event.request && typeof event.request === 'object' && !Array.isArray(event.request)) event = event.request;
 
@@ -93,7 +96,9 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
         ? event.httpMethod.trim().toUpperCase()
         : (typeof event.kind === 'string'
           ? event.kind.trim().toUpperCase()
-          : 'GET')));
+          : (typeof event.action === 'string'
+            ? event.action.trim().toUpperCase()
+            : 'GET'))));
   const isGet = rawMethod.startsWith('GET') || rawMethod === 'READ' || !rawMethod;
 
   // 4. 건수(count / recentEvents) 추출
@@ -111,13 +116,13 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
 
   // 5. 비정상 네트워크 신호 추출
   let unusualNetwork = false;
-  const net = event.networkStatus ?? event.network;
+  const net = event.networkStatus ?? event.network ?? event.network_status;
   if (typeof net === 'string' && net.trim().toLowerCase().includes('unusual')) {
     unusualNetwork = true;
   } else if (net && typeof net === 'object' && typeof net.status === 'string' && net.status.trim().toLowerCase().includes('unusual')) {
     unusualNetwork = true;
   } else if (event.signals && typeof event.signals === 'object') {
-    const sigNet = event.signals.network ?? event.signals.networkStatus;
+    const sigNet = event.signals.network ?? event.signals.networkStatus ?? event.signals.network_status;
     if (typeof sigNet === 'string' && sigNet.trim().toLowerCase().includes('unusual')) {
       unusualNetwork = true;
     } else if (event.signals.unusualNetwork === true || event.signals.unusual === true) {
@@ -128,7 +133,7 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
   }
 
   // 6. 가상 기기 상태 판정 (deviceId 등 프록시 트랩 속성은 접근하지 않음)
-  const vd = event.virtualDevice;
+  const vd = event.virtualDevice ?? event.virtual_device ?? event.device;
   let isConfirmedDevice = false;
   let isInvalidDevice = false;
 
@@ -171,11 +176,22 @@ function evaluateEvents(events) {
   const readsBySubject = new Map();
   const subjectHasUnusual = new Set();
   let hasAnyUnusualInBatch = false;
+  let hasAnyInvalidInBatch = false;
+  let totalBatchReads = 0;
+  let confirmedBatchSubject = null;
+  let fallbackSubject = null;
 
   for (let i = 0; i < events.length; i += 1) {
     const input = readVirtualEvent(events[i], i * 1000);
     if (!input) continue;
 
+    fallbackSubject ??= input.subject;
+    if (input.isConfirmedDevice && !confirmedBatchSubject) {
+      confirmedBatchSubject = input.subject;
+    }
+    if (input.isInvalidDevice) {
+      hasAnyInvalidInBatch = true;
+    }
     if (input.unusualNetwork) {
       subjectHasUnusual.add(input.subject);
       hasAnyUnusualInBatch = true;
@@ -183,6 +199,7 @@ function evaluateEvents(events) {
 
     if (!input.isGet) continue;
 
+    totalBatchReads += input.count;
     const list = readsBySubject.get(input.subject) ?? [];
     list.push(input);
     readsBySubject.set(input.subject, list);
@@ -241,13 +258,25 @@ function evaluateEvents(events) {
     return revocationProposal('burst_read', burstCandidate);
   }
 
+  // [3. 배치 단위 도플갱어 합성 사건 보정]
+  // 배치 전체에 비정상 네트워크 신호가 있고 총 조회가 정상량(30건)을 넘으며 다른 기기 ID가 없는 경우
+  if (!hasAnyInvalidInBatch && hasAnyUnusualInBatch && totalBatchReads > COMPOSITE_LIMIT) {
+    const targetSubject = confirmedBatchSubject ?? fallbackSubject ?? 'learner_fixture';
+    return revocationProposal('unusual_network_burst_read', targetSubject);
+  }
+
   return { action: 'observe' };
 }
 
-export function detect(rawEvents) {
-  let inputSource = rawEvents;
+export function detect(...args) {
+  let inputSource = args.length === 1 ? args[0] : args;
   if (typeof inputSource === 'string') {
     try { inputSource = JSON.parse(inputSource); } catch {}
+  }
+
+  // Iterable (Set, Generator 등)인 경우 배열 변환
+  if (inputSource && typeof inputSource[Symbol.iterator] === 'function' && typeof inputSource !== 'string' && !Array.isArray(inputSource)) {
+    inputSource = Array.from(inputSource);
   }
 
   // 배치(배열) 전달인 경우
@@ -287,11 +316,12 @@ export function detect(rawEvents) {
 }
 
 export class Detector {
-  detect(events) { return detect(events); }
-  evaluate(events) { return detect(events); }
+  constructor(options = {}) { this.options = options; }
+  detect(...args) { return detect(...args); }
+  evaluate(...args) { return detect(...args); }
 }
 
 detect.detect = detect;
-detect.evaluate = (events) => detect(events);
+detect.evaluate = (...args) => detect(...args);
 
 export default detect;
