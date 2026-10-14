@@ -2,7 +2,8 @@ import { fixtureRequests } from '../scripts/fixture-7.mjs';
 import { decide } from './decider.mjs';
 import { detect } from './detect.mjs';
 import { parseMemoResourceId } from './resource-id.mjs';
-import { verifyBackupIntegrity, computeContentHash } from './restore-memo.mjs';
+import { verifyBackupIntegrity, computeContentHash, loadBackupNote } from './restore-memo.mjs';
+import { getPolicyDiff, SAFE_POLICY_BACKUP } from './policy-restore.mjs';
 
 export async function runAttackChecks(config) {
   const checks = [];
@@ -99,25 +100,23 @@ export async function runAttackChecks(config) {
     }
 
     if (config.step >= 10) {
-      const sampleContent = '시험 계정 B의 가상 메모 사본';
-      const sampleHash = computeContentHash(sampleContent);
-      const backupSample = {
-        id: '00000000-0000-4000-8000-00000000000b',
-        owner_id: '00000000-0000-4000-8000-00000000000b',
-        title: '시험 계정 B 사본',
-        content: sampleContent,
-        contentHash: sampleHash,
-      };
-      const matchResult = verifyBackupIntegrity(backupSample, backupSample, backupSample.owner_id);
-      const tamperedResult = verifyBackupIntegrity({ ...backupSample, contentHash: 'badhash' }, backupSample, backupSample.owner_id);
-      const isRestoreVerified = matchResult.valid && !tamperedResult.valid;
+      const backupSample = loadBackupNote('00000000-0000-4000-8000-00000000000b');
+      const hasBackup = backupSample !== null;
+      const matchResult = hasBackup ? verifyBackupIntegrity(backupSample, backupSample, backupSample.owner_id) : { valid: false };
+      const tamperedResult = hasBackup ? verifyBackupIntegrity({ ...backupSample, content: '변조된 내용', contentHash: 'badhash' }, backupSample, backupSample.owner_id) : { valid: true };
+      const missingBackupResult = verifyBackupIntegrity({ id: 'non-existent' }, null, '00000000-0000-4000-8000-00000000000b');
+
+      const policyDiff = getPolicyDiff(['device_registered', 'step_up_required'], SAFE_POLICY_BACKUP);
+      const isPolicyVerified = policyDiff.verified && policyDiff.changes.rulesToRestore.length > 0;
+
+      const isRestoreVerified = hasBackup && matchResult.valid && !tamperedResult.valid && !missingBackupResult.valid && isPolicyVerified;
 
       checks.push({
         attackId: 'backup_single_memo_restore_verified',
-        expected: '시험 계정 B의 사본과 ID·소유자·내용 해시 대조 시 단건 복원 통과 및 변조 거부',
+        expected: '사본 재조회 및 정책·메모 무결성 대조 시 단건 복원 통과 및 변조·사본부재 중단',
         observed: isRestoreVerified
-          ? '시험 계정 B의 ID·소유자·내용 해시가 사본과 일치할 때 복원 검증 통과 및 변조 거부 확인'
-          : '단건 사본 복원 검증 실패',
+          ? '사본 파일 재조회 확인, ID·소유자·내용 해시 일치 시 통과 및 변조·사본부재 시 복원 중단 확인'
+          : '단건 사본 복원 및 정책 검증 실패',
       });
     }
 
