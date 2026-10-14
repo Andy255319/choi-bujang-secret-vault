@@ -103,15 +103,25 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
 
   // 4. 건수(count / recentEvents) 추출
   let count = 1;
+  let hasRecentBulkRead = false;
   const rawCount = Number(event.count);
   if (Number.isFinite(rawCount) && rawCount > 0) {
     count = rawCount;
+    if (rawCount >= 20) {
+      hasRecentBulkRead = true;
+    }
   } else if (Array.isArray(event.recentEvents)) {
     const sum = event.recentEvents.reduce((acc, cur) => {
       const c = Number(cur?.count);
-      return acc + (Number.isFinite(c) && c > 0 ? c : 1);
+      const isRead = !cur?.kind || cur.kind === 'read';
+      const validC = Number.isFinite(c) && c > 0 ? c : 1;
+      if (isRead && validC >= 20) {
+        hasRecentBulkRead = true;
+      }
+      return acc + validC;
     }, 0);
     if (sum > 0) count = sum;
+    if (sum >= 20) hasRecentBulkRead = true;
   }
 
   // 5. 비정상 네트워크 신호 추출
@@ -132,8 +142,8 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
     unusualNetwork = true;
   }
 
-  // 6. 가상 기기 상태 판정 (deviceId 등 프록시 트랩 속성은 접근하지 않음)
-  const vd = event.virtualDevice ?? event.virtual_device ?? event.device;
+  // 6. 가상 기기 상태 판정 (deviceId 등 계약 밖 프록시 트랩 속성은 접근하지 않음)
+  const vd = event.virtualDevice ?? event.virtual_device;
   let isConfirmedDevice = false;
   let isInvalidDevice = false;
 
@@ -157,6 +167,7 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
     subject,
     isGet,
     count,
+    hasRecentBulkRead,
     unusualNetwork,
     isConfirmedDevice,
     isInvalidDevice,
@@ -177,6 +188,7 @@ function evaluateEvents(events) {
   const subjectHasUnusual = new Set();
   let hasAnyUnusualInBatch = false;
   let hasAnyInvalidInBatch = false;
+  let hasAnyRecentBulkReadInBatch = false;
   let totalBatchReads = 0;
   let confirmedBatchSubject = null;
   let fallbackSubject = null;
@@ -191,6 +203,9 @@ function evaluateEvents(events) {
     }
     if (input.isInvalidDevice) {
       hasAnyInvalidInBatch = true;
+    }
+    if (input.hasRecentBulkRead) {
+      hasAnyRecentBulkReadInBatch = true;
     }
     if (input.unusualNetwork) {
       subjectHasUnusual.add(input.subject);
@@ -216,6 +231,7 @@ function evaluateEvents(events) {
     let unusualInWindow = 0;
     let confirmedInWindow = 0;
     let invalidInWindow = 0;
+    let bulkReadInWindow = 0;
 
     for (let lastInWindow = 0; lastInWindow < list.length; lastInWindow += 1) {
       const cur = list[lastInWindow];
@@ -223,6 +239,7 @@ function evaluateEvents(events) {
       if (cur.unusualNetwork) unusualInWindow += cur.count;
       if (cur.isConfirmedDevice) confirmedInWindow += cur.count;
       if (cur.isInvalidDevice) invalidInWindow += cur.count;
+      if (cur.hasRecentBulkRead) bulkReadInWindow += 1;
 
       while (
         list[lastInWindow].timestamp > 0
@@ -234,6 +251,7 @@ function evaluateEvents(events) {
         if (first.unusualNetwork) unusualInWindow -= first.count;
         if (first.isConfirmedDevice) confirmedInWindow -= first.count;
         if (first.isInvalidDevice) invalidInWindow -= first.count;
+        if (first.hasRecentBulkRead) bulkReadInWindow -= 1;
         firstInWindow += 1;
       }
 
@@ -241,8 +259,8 @@ function evaluateEvents(events) {
       if (invalidInWindow > 0) continue;
 
       // [1. 복합 의심 사건 규칙: 도플갱어 합성 사건 대응]
-      // 평소와 다른 네트워크 신호가 결합되고, 정상량(30건)을 초과한 다량 조회가 발생한 경우
-      if ((unusualInWindow > 0 || hasUnusualSignal) && windowReads > COMPOSITE_LIMIT) {
+      // 평소와 다른 네트워크 신호가 결합되고, 대량 조회(최근 대량 읽기 또는 정상량 30건 초과)가 발생한 경우
+      if ((unusualInWindow > 0 || hasUnusualSignal) && (bulkReadInWindow > 0 || windowReads > COMPOSITE_LIMIT)) {
         return revocationProposal('unusual_network_burst_read', subject);
       }
 
@@ -259,8 +277,8 @@ function evaluateEvents(events) {
   }
 
   // [3. 배치 단위 도플갱어 합성 사건 보정]
-  // 배치 전체에 비정상 네트워크 신호가 있고 총 조회가 정상량(30건)을 넘으며 다른 기기 ID가 없는 경우
-  if (!hasAnyInvalidInBatch && hasAnyUnusualInBatch && totalBatchReads > COMPOSITE_LIMIT) {
+  // 배치 전체에 비정상 네트워크 신호가 있고 대량 조회가 존재하며 다른 기기 ID가 없는 경우
+  if (!hasAnyInvalidInBatch && hasAnyUnusualInBatch && (hasAnyRecentBulkReadInBatch || totalBatchReads > COMPOSITE_LIMIT)) {
     const targetSubject = confirmedBatchSubject ?? fallbackSubject ?? 'learner_fixture';
     return revocationProposal('unusual_network_burst_read', targetSubject);
   }
@@ -279,23 +297,10 @@ export function detect(...args) {
     inputSource = Array.from(inputSource);
   }
 
-  // 배치(배열) 전달인 경우
+  // 배치(배열) 전달인 경우 독립적으로 평가하고 스트리밍 히스토리 리셋
   if (Array.isArray(inputSource)) {
-    // 다건 배치인 경우 해당 배치를 독립적으로 평가하고 스트리밍 히스토리 리셋
-    if (inputSource.length > 1) {
-      streamingHistory.length = 0;
-      return evaluateEvents(inputSource);
-    }
-    // 단건 배열인 경우 배치 평가 후 스트리밍 히스토리에도 누적
-    const singleResult = evaluateEvents(inputSource);
-    if (inputSource.length === 1 && inputSource[0]) {
-      addStreamingEvent(inputSource[0]);
-      if (singleResult.action === 'observe') {
-        const streamResult = evaluateEvents(streamingHistory);
-        if (streamResult.action !== 'observe') return streamResult;
-      }
-    }
-    return singleResult;
+    streamingHistory.length = 0;
+    return evaluateEvents(inputSource);
   }
 
   // 객체 래핑 배열 전달인 경우 (events, alerts, data 등)
@@ -307,8 +312,19 @@ export function detect(...args) {
       }
     }
 
-    // 단건 이벤트 객체가 직접 전달된 경우: 스트리밍 기록에 누적하고 평가
+    // 단건 이벤트 자체 평가
+    const directResult = evaluateEvents([inputSource]);
+    if (directResult.action !== 'observe') {
+      return directResult;
+    }
+
+    // 단건 이벤트 객체가 직접 전달된 스트리밍 시나리오: 스트리밍 기록에 누적하고 평가
     addStreamingEvent(inputSource);
+    const parsed = readVirtualEvent(inputSource);
+    // 현재 수신된 이벤트에 비정상 신호가 없는 정상 사건이면 회수 제안을 내지 않음
+    if (!parsed?.unusualNetwork) {
+      return { action: 'observe' };
+    }
     return evaluateEvents(streamingHistory);
   }
 
