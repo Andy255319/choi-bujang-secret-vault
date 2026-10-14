@@ -10,35 +10,64 @@ const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 function readVirtualEvent(event) {
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
+  // 1. 주체(subject) 식별: 객체형 identity.sub, 문자열형 identity, subjectId, sub 등 전수 대응
+  let subject = null;
+  if (typeof event.identity === 'string' && event.identity.trim()) {
+    subject = event.identity.trim();
+  } else if (event.identity && typeof event.identity === 'object' && typeof event.identity.sub === 'string') {
+    subject = event.identity.sub.trim();
+  } else if (event.identity && typeof event.identity === 'object' && typeof event.identity.id === 'string') {
+    subject = event.identity.id.trim();
+  } else if (typeof event.subjectId === 'string' && event.subjectId.trim()) {
+    subject = event.subjectId.trim();
+  } else if (typeof event.subject === 'string' && event.subject.trim()) {
+    subject = event.subject.trim();
+  } else if (typeof event.sub === 'string' && event.sub.trim()) {
+    subject = event.sub.trim();
+  } else if (typeof event.userId === 'string' && event.userId.trim()) {
+    subject = event.userId.trim();
+  }
+  if (!subject) return null;
+
+  // 2. 시간(at/timestamp) 파싱: ISO 문자열, 공백 구분 문자열, 유닉스 초/밀리초, Date 객체 대응
   const rawAt = event.at ?? event.timestamp;
-  const rawMethod = typeof event.method === 'string' ? event.method.trim().toUpperCase() : (event.method === undefined ? 'GET' : '');
-  const subject = event.identity?.sub ?? event.subjectId ?? event.subject;
-
-  const rawNetwork = event.networkStatus ?? event.network ?? event.signals?.network;
-  const unusualNetwork = typeof rawNetwork === 'string' && rawNetwork.trim().toLowerCase() === 'unusual';
-
-  const virtualDevice = event.virtualDevice;
-  const isConfirmedDevice = virtualDevice !== null
-    && typeof virtualDevice === 'object'
-    && !Array.isArray(virtualDevice)
-    && virtualDevice.verified === true
-    && virtualDevice.id === VIRTUAL_DEVICE_ID;
-
-  if (typeof subject !== 'string' || !subject) return null;
-
   let timestamp = NaN;
   if (typeof rawAt === 'number') {
-    timestamp = rawAt;
+    timestamp = rawAt < 1e11 ? rawAt * 1000 : rawAt;
   } else if (rawAt instanceof Date) {
     timestamp = rawAt.getTime();
   } else if (typeof rawAt === 'string') {
-    timestamp = Date.parse(rawAt);
+    timestamp = Date.parse(rawAt.includes('T') ? rawAt : rawAt.replace(' ', 'T'));
   }
   if (!Number.isFinite(timestamp)) return null;
 
+  // 3. 요청 방식(method): GET, 'GET /notes', 누락된 기본값 등 대응
+  const methodStr = typeof event.method === 'string'
+    ? event.method.trim().toUpperCase()
+    : (typeof event.httpMethod === 'string' ? event.httpMethod.trim().toUpperCase() : '');
+  const isGet = methodStr === 'GET' || methodStr.startsWith('GET') || methodStr === 'READ' || !methodStr;
+
+  // 4. 비정상 네트워크 신호: networkStatus, network, signals.network, boolean 신호 대응
+  const rawNetwork = event.networkStatus ?? event.network ?? event.signals?.network;
+  const networkStr = typeof rawNetwork === 'string' ? rawNetwork.trim().toLowerCase() : '';
+  const unusualNetwork = networkStr === 'unusual'
+    || event.unusualNetwork === true
+    || event.unusual === true
+    || rawNetwork === true;
+
+  // 5. 가상 기기 식별
+  const virtualDevice = event.virtualDevice;
+  const isConfirmedDevice = (virtualDevice !== null
+    && typeof virtualDevice === 'object'
+    && !Array.isArray(virtualDevice)
+    && virtualDevice.verified === true
+    && virtualDevice.id === VIRTUAL_DEVICE_ID)
+    || virtualDevice === VIRTUAL_DEVICE_ID
+    || (virtualDevice && typeof virtualDevice === 'object' && virtualDevice.id === VIRTUAL_DEVICE_ID && virtualDevice.verified !== false);
+
   return {
     timestamp,
-    isGet: rawMethod === 'GET',
+    isGet,
     subject,
     unusualNetwork,
     isConfirmedDevice,
@@ -57,7 +86,6 @@ function revocationProposal(reasonCode, subject) {
 export function detect(events) {
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
 
-  // 사용자(subject)별로 사건 묶음 분리
   const eventsBySubject = new Map();
   for (const event of events) {
     const input = readVirtualEvent(event);
@@ -93,8 +121,8 @@ export function detect(events) {
       // 10분 구간 내 GET 조회가 120건을 초과할 때
       if (getCount > LIMIT) {
         // [복합 의심 사건 규칙]
-        // 120건 초과 조회 + 비정상 네트워크 신호가 결합되면 도플갱어 공격 요청에
-        // 기기 식별값이 없더라도 확인된 가상 기기(fixture-device-01) 회수 제안을 즉시 반환
+        // 비정상 네트워크 신호가 동반되면 침입자 요청에 기기 정보가 없더라도
+        // 피해자 계정의 등록 가상 기기(fixture-device-01) 회수 제안 즉시 반환
         if (unusualCount > 0) {
           return revocationProposal('unusual_network_burst_read', subject);
         }
