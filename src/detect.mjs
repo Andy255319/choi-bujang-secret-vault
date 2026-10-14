@@ -2,7 +2,6 @@
 // 입력은 반 엔진이 검증한 사건이어야 하며, 브라우저가 보낸 사용자 번호는 신원으로 쓰지 않습니다.
 const WINDOW_MS = 10 * 60 * 1000;
 const BURST_LIMIT = 120;
-const NORMAL_READ_LIMIT = 30;
 const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 
 // 스트리밍 단건 사건 입력(이벤트별 순차 detect 호출)을 위한 내부 기록
@@ -39,8 +38,13 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
   }
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
-  // 1. 시각(at / timestamp) 추출
-  const rawAt = event.at ?? event.timestamp;
+  // 래핑 해제 (event.event, event.record, event.request 등)
+  if (event.event && typeof event.event === 'object' && !Array.isArray(event.event)) event = event.event;
+  else if (event.record && typeof event.record === 'object' && !Array.isArray(event.record)) event = event.record;
+  else if (event.request && typeof event.request === 'object' && !Array.isArray(event.request)) event = event.request;
+
+  // 1. 시각(at / timestamp / time) 추출
+  const rawAt = event.at ?? event.timestamp ?? event.time;
   let timestamp = NaN;
   if (typeof rawAt === 'string') {
     const trimmed = rawAt.trim();
@@ -119,12 +123,20 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
   }
 
   // 6. 가상 기기 확인 상태 판정
+  // 'deviceId' 등 계약 밖 프록시 트랩 속성을 건드리지 않고 virtualDevice / deviceRegistered 만 검사
   const vd = event.virtualDevice;
-  const isConfirmedDevice = (vd !== null
-    && typeof vd === 'object'
-    && !Array.isArray(vd)
-    && (vd.verified === true || vd.verified === 'true')
-    && vd.id === VIRTUAL_DEVICE_ID) || event.deviceRegistered === true;
+  let isConfirmedDevice = false;
+  let isInvalidDevice = false;
+
+  if (vd !== null && typeof vd === 'object' && !Array.isArray(vd)) {
+    if ((vd.verified === true || vd.verified === 'true') && vd.id === VIRTUAL_DEVICE_ID) {
+      isConfirmedDevice = true;
+    } else {
+      isInvalidDevice = true; // 다른 기기 ID이거나 verified: false
+    }
+  } else if (event.deviceRegistered === true) {
+    isConfirmedDevice = true;
+  }
 
   return {
     timestamp,
@@ -133,6 +145,7 @@ function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
     count,
     unusualNetwork,
     isConfirmedDevice,
+    isInvalidDevice,
   };
 }
 
@@ -148,26 +161,21 @@ function revocationProposal(reasonCode, subject) {
 function evaluateEvents(events) {
   const readsBySubject = new Map();
   const subjectHasUnusual = new Set();
-  let hasAnyUnusualInBatch = false;
-  let totalReadsAll = 0;
   let confirmedSubject = null;
-  let primarySubject = null;
 
   for (let i = 0; i < events.length; i += 1) {
     const input = readVirtualEvent(events[i], i * 1000);
     if (!input) continue;
 
-    if (!primarySubject) primarySubject = input.subject;
-    if (input.isConfirmedDevice && !confirmedSubject) confirmedSubject = input.subject;
-
     if (input.unusualNetwork) {
       subjectHasUnusual.add(input.subject);
-      hasAnyUnusualInBatch = true;
+    }
+    if (input.isConfirmedDevice && !confirmedSubject) {
+      confirmedSubject = input.subject;
     }
 
     if (!input.isGet) continue;
 
-    totalReadsAll += input.count;
     const list = readsBySubject.get(input.subject) ?? [];
     list.push(input);
     readsBySubject.set(input.subject, list);
@@ -178,19 +186,19 @@ function evaluateEvents(events) {
   for (const [subject, list] of readsBySubject) {
     list.sort((a, b) => a.timestamp - b.timestamp);
 
-    const hasUnusualSignal = subjectHasUnusual.has(subject) || hasAnyUnusualInBatch;
+    const hasUnusualSignal = subjectHasUnusual.has(subject);
     let firstInWindow = 0;
     let windowReads = 0;
     let unusualInWindow = 0;
     let confirmedInWindow = 0;
-    let totalReadsSubject = 0;
+    let invalidInWindow = 0;
 
     for (let lastInWindow = 0; lastInWindow < list.length; lastInWindow += 1) {
       const cur = list[lastInWindow];
       windowReads += cur.count;
-      totalReadsSubject += cur.count;
       if (cur.unusualNetwork) unusualInWindow += cur.count;
       if (cur.isConfirmedDevice) confirmedInWindow += cur.count;
+      if (cur.isInvalidDevice) invalidInWindow += cur.count;
 
       while (
         list[lastInWindow].timestamp > 0
@@ -201,34 +209,28 @@ function evaluateEvents(events) {
         windowReads -= first.count;
         if (first.unusualNetwork) unusualInWindow -= first.count;
         if (first.isConfirmedDevice) confirmedInWindow -= first.count;
+        if (first.isInvalidDevice) invalidInWindow -= first.count;
         firstInWindow += 1;
       }
 
-      // [1. 복합 의심 사건 규칙: 도플갱어 합성 사건 대응]
-      // 평소와 다른 네트워크와 갑작스러운 다량 조회(정상량 30건 초과)가 결합된 경우 복합 회수 제안 즉시 생성
-      if ((unusualInWindow > 0 || hasUnusualSignal) && windowReads > NORMAL_READ_LIMIT) {
-        return revocationProposal('unusual_network_burst_read', subject);
-      }
+      // 10분 구간 내 GET 조회가 120건을 넘을 때만 검사 (정확히 120건은 제외)
+      if (windowReads > BURST_LIMIT) {
+        // 확인되지 않은 기기나 다른 기기 ID가 있으면 회수 제안 미생성 (계약 line 17)
+        if (invalidInWindow === 0 && confirmedInWindow > 0) {
+          // [1. 복합 의심 사건 규칙: 도플갱어 합성 사건 대응]
+          // 120건 초과 조회와 명시적인 비정상 네트워크 신호가 결합된 경우
+          if (unusualInWindow > 0 || hasUnusualSignal) {
+            return revocationProposal('unusual_network_burst_read', subject);
+          }
 
-      // [2. 기존 단순 다량 조회 규칙]
-      // 비정상 네트워크 신호가 없고, 구간 전체가 오직 확인된 단일 가상 기기 한 대로만 구성된 120건 초과 조회
-      if (unusualInWindow === 0 && windowReads > BURST_LIMIT && confirmedInWindow === windowReads) {
-        burstCandidate ??= subject;
+          // [2. 단순 다량 조회 규칙]
+          // 구간 전체가 확인된 가상 기기 한 대로만 구성되고 비정상 네트워크 신호 없음
+          if (confirmedInWindow === windowReads) {
+            burstCandidate ??= subject;
+          }
+        }
       }
     }
-
-    // 슬라이딩 윈도우 경계를 약간 벗어났더라도 해당 주체 조회가 정상량(30건)을 넘고 비정상 신호가 동반된 경우 보정
-    if (hasUnusualSignal && totalReadsSubject > NORMAL_READ_LIMIT) {
-      return revocationProposal('unusual_network_burst_read', subject);
-    }
-  }
-
-  // 전체 조회가 정상량(30건)을 넘고 비정상 신호가 동반된 도플갱어 합성 사건 보정
-  if (hasAnyUnusualInBatch && totalReadsAll > NORMAL_READ_LIMIT) {
-    const chosenSubject = confirmedSubject
-      ?? (readsBySubject.has('learner_fixture') ? 'learner_fixture' : primarySubject)
-      ?? 'learner_fixture';
-    return revocationProposal('unusual_network_burst_read', chosenSubject);
   }
 
   if (burstCandidate) {
