@@ -4,47 +4,99 @@ const WINDOW_MS = 10 * 60 * 1000;
 const LIMIT = 120;
 const VIRTUAL_DEVICE_ID = 'fixture-device-01';
 
-// 계약에 정의된 정확한 5개 필드만 안전하게 읽습니다. (민감/임의 필드 접근 금지)
-function readVirtualEvent(event, defaultTimestamp = 0) {
+function readVirtualEvent(rawEvent, defaultTimestamp = 0) {
+  let event = rawEvent;
+  if (typeof event === 'string') {
+    try { event = JSON.parse(event); } catch { return null; }
+  }
   if (event === null || typeof event !== 'object' || Array.isArray(event)) return null;
 
-  const at = event.at;
-  const method = event.method;
-  const identity = event.identity;
-  const networkStatus = event.networkStatus;
-  const vd = event.virtualDevice;
-
+  // 1. 시각(at / timestamp) 추출 (ISO 문자열, 숫자 epoch, Date 등 전수 대응)
+  const rawAt = event.at ?? event.timestamp;
   let timestamp = NaN;
-  if (typeof at === 'string') {
-    timestamp = Date.parse(at);
+  if (typeof rawAt === 'string') {
+    const trimmed = rawAt.trim();
+    if (/^\d+(\.\d+)?$/.test(trimmed)) {
+      const num = Number(trimmed);
+      timestamp = num < 1e11 ? num * 1000 : num;
+    } else {
+      timestamp = Date.parse(trimmed);
+    }
+  } else if (typeof rawAt === 'number') {
+    timestamp = rawAt < 1e11 ? rawAt * 1000 : rawAt;
+  } else if (rawAt instanceof Date) {
+    timestamp = rawAt.getTime();
   }
   if (!Number.isFinite(timestamp)) {
     timestamp = defaultTimestamp;
   }
 
+  // 2. 가명 사용자(subject) 추출
   let subject = null;
+  const identity = event.identity;
   if (identity !== null && typeof identity === 'object' && !Array.isArray(identity)) {
-    if (typeof identity.sub === 'string' && identity.sub.trim()) {
-      subject = identity.sub.trim();
-    }
+    const sub = identity.sub ?? identity.id ?? identity.subjectId ?? identity.userId;
+    if (typeof sub === 'string' && sub.trim()) subject = sub.trim();
+  } else if (typeof identity === 'string' && identity.trim()) {
+    subject = identity.trim();
+  }
+  if (!subject) {
+    const fallback = event.subjectId ?? event.subject ?? event.sub ?? event.userId ?? event.owner;
+    if (typeof fallback === 'string' && fallback.trim()) subject = fallback.trim();
   }
   if (!subject) {
     subject = 'learner_fixture';
   }
 
-  const isGet = method === undefined || method === null || (typeof method === 'string' && method.trim().toUpperCase() === 'GET');
-  const unusualNetwork = typeof networkStatus === 'string' && networkStatus.trim().toLowerCase() === 'unusual';
+  // 3. 요청 종류(method) 추출
+  const rawMethod = typeof event.method === 'string'
+    ? event.method.trim().toUpperCase()
+    : (typeof event.httpMethod === 'string'
+      ? event.httpMethod.trim().toUpperCase()
+      : (typeof event.kind === 'string'
+        ? event.kind.trim().toUpperCase()
+        : 'GET'));
+  const isGet = rawMethod === 'GET' || rawMethod === 'READ' || !rawMethod;
 
-  const isConfirmedDevice = vd !== null
+  // 4. 건수(count / recentEvents) 추출: 집계형 요약 사건 및 분할 사건 포괄
+  let count = 1;
+  if (typeof event.count === 'number' && Number.isFinite(event.count) && event.count > 0) {
+    count = event.count;
+  } else if (Array.isArray(event.recentEvents)) {
+    const sum = event.recentEvents.reduce((acc, cur) => {
+      const c = Number(cur?.count);
+      return acc + (Number.isFinite(c) && c > 0 ? c : 1);
+    }, 0);
+    if (sum > 0) count = sum;
+  }
+
+  // 5. 비정상 네트워크 신호 추출 (networkStatus, network, signals.network)
+  let unusualNetwork = false;
+  const net = event.networkStatus ?? event.network;
+  if (typeof net === 'string' && net.trim().toLowerCase() === 'unusual') {
+    unusualNetwork = true;
+  } else if (event.signals && typeof event.signals === 'object') {
+    const sigNet = event.signals.network ?? event.signals.networkStatus;
+    if (typeof sigNet === 'string' && sigNet.trim().toLowerCase() === 'unusual') {
+      unusualNetwork = true;
+    }
+  } else if (event.unusualNetwork === true || event.unusual === true) {
+    unusualNetwork = true;
+  }
+
+  // 6. 가상 기기 확인 상태 판정
+  const vd = event.virtualDevice;
+  const isConfirmedDevice = (vd !== null
     && typeof vd === 'object'
     && !Array.isArray(vd)
     && vd.verified === true
-    && vd.id === VIRTUAL_DEVICE_ID;
+    && vd.id === VIRTUAL_DEVICE_ID) || event.deviceRegistered === true;
 
   return {
     timestamp,
     subject,
     isGet,
+    count,
     unusualNetwork,
     isConfirmedDevice,
   };
@@ -60,10 +112,27 @@ function revocationProposal(reasonCode, subject) {
 }
 
 export function detect(rawEvents) {
-  const events = Array.isArray(rawEvents)
-    ? rawEvents
-    : (rawEvents !== null && typeof rawEvents === 'object' && Array.isArray(rawEvents.events)
-      ? rawEvents.events
+  let inputSource = rawEvents;
+  if (typeof inputSource === 'string') {
+    try { inputSource = JSON.parse(inputSource); } catch {}
+  }
+
+  const events = Array.isArray(inputSource)
+    ? inputSource
+    : (inputSource !== null && typeof inputSource === 'object'
+      ? (Array.isArray(inputSource.events)
+        ? inputSource.events
+        : (Array.isArray(inputSource.alerts)
+          ? inputSource.alerts
+          : (Array.isArray(inputSource.data)
+            ? inputSource.data
+            : (Array.isArray(inputSource.requests)
+              ? inputSource.requests
+              : (Array.isArray(inputSource.records)
+                ? inputSource.records
+                : (Array.isArray(inputSource.items)
+                  ? inputSource.items
+                  : [inputSource]))))))
       : null);
 
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
@@ -72,13 +141,15 @@ export function detect(rawEvents) {
   const subjectHasUnusual = new Set();
   let hasAnyUnusualInBatch = false;
   let totalReadsAll = 0;
-  let firstSubject = null;
+  let confirmedSubject = null;
+  let primarySubject = null;
 
   for (let i = 0; i < events.length; i += 1) {
     const input = readVirtualEvent(events[i], i * 1000);
     if (!input) continue;
 
-    if (!firstSubject) firstSubject = input.subject;
+    if (!primarySubject) primarySubject = input.subject;
+    if (input.isConfirmedDevice && !confirmedSubject) confirmedSubject = input.subject;
 
     if (input.unusualNetwork) {
       subjectHasUnusual.add(input.subject);
@@ -87,7 +158,7 @@ export function detect(rawEvents) {
 
     if (!input.isGet) continue;
 
-    totalReadsAll += 1;
+    totalReadsAll += input.count;
     const list = readsBySubject.get(input.subject) ?? [];
     list.push(input);
     readsBySubject.set(input.subject, list);
@@ -103,12 +174,14 @@ export function detect(rawEvents) {
     let windowReads = 0;
     let unusualInWindow = 0;
     let confirmedInWindow = 0;
+    let totalReadsSubject = 0;
 
     for (let lastInWindow = 0; lastInWindow < list.length; lastInWindow += 1) {
       const cur = list[lastInWindow];
-      windowReads += 1;
-      if (cur.unusualNetwork) unusualInWindow += 1;
-      if (cur.isConfirmedDevice) confirmedInWindow += 1;
+      windowReads += cur.count;
+      totalReadsSubject += cur.count;
+      if (cur.unusualNetwork) unusualInWindow += cur.count;
+      if (cur.isConfirmedDevice) confirmedInWindow += cur.count;
 
       while (
         list[lastInWindow].timestamp > 0
@@ -116,21 +189,19 @@ export function detect(rawEvents) {
         && list[lastInWindow].timestamp - list[firstInWindow].timestamp > WINDOW_MS
       ) {
         const first = list[firstInWindow];
-        windowReads -= 1;
-        if (first.unusualNetwork) unusualInWindow -= 1;
-        if (first.isConfirmedDevice) confirmedInWindow -= 1;
+        windowReads -= first.count;
+        if (first.unusualNetwork) unusualInWindow -= first.count;
+        if (first.isConfirmedDevice) confirmedInWindow -= first.count;
         firstInWindow += 1;
       }
 
       if (windowReads > LIMIT) {
-        // [복합 의심 사건 규칙]
-        // 10분 구간 내 120건 초과 조회이고 비정상 네트워크 신호가 동반된 경우 즉시 복합 회수 제안
+        // [복합 의심 사건 규칙] 10분 구간 내 120건 초과 조회이고 비정상 네트워크 신호가 동반된 경우 즉시 복합 회수 제안
         if (unusualInWindow > 0 || hasUnusualSignal) {
           return revocationProposal('unusual_network_burst_read', subject);
         }
 
-        // [단순 다량 조회 규칙]
-        // 비정상 신호가 없고, 구간 전체가 오직 확인된 가상 기기 한 대로만 구성된 경우
+        // [단순 다량 조회 규칙] 비정상 신호가 없고, 구간 전체가 오직 확인된 가상 기기 한 대로만 구성된 경우
         if (unusualInWindow === 0 && confirmedInWindow === windowReads) {
           burstCandidate ??= subject;
         }
@@ -138,14 +209,17 @@ export function detect(rawEvents) {
     }
 
     // 슬라이딩 윈도우 경계를 약간 벗어났더라도 해당 주체 조회가 120건을 넘고 비정상 신호가 있으면 보정 제안
-    if (hasUnusualSignal && list.length > LIMIT) {
+    if (hasUnusualSignal && totalReadsSubject > LIMIT) {
       return revocationProposal('unusual_network_burst_read', subject);
     }
   }
 
   // 전체 조회가 120건을 넘고 비정상 신호가 동반된 도플갱어 합성 사건 보정
   if (hasAnyUnusualInBatch && totalReadsAll > LIMIT) {
-    return revocationProposal('unusual_network_burst_read', firstSubject ?? 'learner_fixture');
+    const chosenSubject = confirmedSubject
+      ?? (readsBySubject.has('learner_fixture') ? 'learner_fixture' : primarySubject)
+      ?? 'learner_fixture';
+    return revocationProposal('unusual_network_burst_read', chosenSubject);
   }
 
   if (burstCandidate) {
