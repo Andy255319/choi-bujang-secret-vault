@@ -32,14 +32,25 @@ export const BUILTIN_BACKUP_NOTES = Object.freeze(
       ]
 );
 
+function verifyLoadedBackup(item) {
+  if (!item || typeof item !== 'object') return null;
+  const content = item.content ?? item.body;
+  const declaredHash = item.contentHash ?? item.hash;
+  if (!content || !declaredHash) return null;
+  if (computeContentHash(content) !== declaredHash) return null;
+  return Object.freeze({ ...item });
+}
+
 /**
  * 저장소의 비공개 가상 메모 사본 파일 및 내장 사본에서 지정한 ID의 사본을 다시 읽어옵니다.
+ * 사본을 다시 읽은 뒤 내용 해시를 실시간 검증하며, 사본이 없거나 검증 실패 시 즉시 null을 반환하여 멈춥니다.
  */
 export function loadBackupNote(targetId, ownerId) {
   const parsedTarget = parseMemoResourceId(String(targetId ?? ''));
-  const cleanId = parsedTarget?.id ?? String(targetId ?? '');
+  const cleanId = parsedTarget?.id ?? (targetId ? String(targetId) : '');
+  if (!cleanId) return null;
 
-  // 1. 파일에서 먼저 다시 읽기 시도
+  // 1. 파일에서 먼저 다시 읽기 시도 및 무결성 검증
   try {
     const backupPath = path.join(process.cwd(), 'data', 'backup-notes.json');
     if (fs.existsSync(backupPath)) {
@@ -50,32 +61,36 @@ export function loadBackupNote(targetId, ownerId) {
           const parsedItem = parseMemoResourceId(String(item.id ?? ''));
           return (parsedItem?.id ?? item.id) === cleanId;
         });
-        if (found) return Object.freeze({ ...found });
+        if (found) {
+          const verified = verifyLoadedBackup(found);
+          // 사본을 다시 읽었으나 검증에 실패(해시 불일치/변조)한 경우 즉시 중단(null)
+          return verified;
+        }
       }
     }
   } catch {
     // 파일 읽기 실패 시 정적 import 및 내장 사본 사용
   }
 
-  // 2. 정적 번들된 사본 목록에서 조회
+  // 2. 정적 번들된 사본 목록에서 조회 및 무결성 검증
   if (Array.isArray(backupNotesData)) {
     const found = backupNotesData.find(item => {
       const parsedItem = parseMemoResourceId(String(item.id ?? ''));
       return (parsedItem?.id ?? item.id) === cleanId;
     });
-    if (found) return Object.freeze({ ...found });
+    if (found) {
+      const verified = verifyLoadedBackup(found);
+      return verified;
+    }
   }
 
-  // 3. 내장 검증 사본에서 조회
+  // 3. 내장 검증 사본에서 조회 및 무결성 검증
   const builtin = BUILTIN_BACKUP_NOTES.find(item => {
     const parsedItem = parseMemoResourceId(String(item.id ?? ''));
     return (parsedItem?.id ?? item.id) === cleanId;
   });
-  if (builtin) return Object.freeze({ ...builtin });
-
-  // 4. 만약 cleanId가 비어있고 시험 계정 B의 요청인 경우 기본 사본 제공
-  if (!cleanId && ownerId && BUILTIN_BACKUP_NOTES[0].owner_id === ownerId) {
-    return Object.freeze({ ...BUILTIN_BACKUP_NOTES[0] });
+  if (builtin) {
+    return verifyLoadedBackup(builtin);
   }
 
   return null;

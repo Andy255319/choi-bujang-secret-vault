@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     const body = (req.method === 'POST' ? req.body : null) ?? {};
 
     // 0. 정책 복원 요청인 경우 (만들기 1 & 2: 운영 정책은 건드리지 않고 차이 및 버전 확인)
-    const isPolicyRequest = body.type === 'policy' || body.target === 'policy' || req.query?.type === 'policy';
+    const isPolicyRequest = body.type === 'policy' || body.target === 'policy' || Array.isArray(body.rules) || req.query?.type === 'policy';
     if (isPolicyRequest) {
       const currentRules = Array.isArray(body.rules) ? body.rules : ['device_registered', 'step_up_required'];
       const diff = getPolicyDiff(currentRules, SAFE_POLICY_BACKUP);
@@ -77,9 +77,13 @@ export default async function handler(req, res) {
 
     // 1. 단건 비공개 가상 메모 복원 (만들기 3)
     // ID 탐색: 본문 또는 쿼리, 중첩 객체 탐색
-    const rawTargetId = body.id ?? body.targetId ?? body.resourceId ?? body.memo?.id ?? body.target?.id ?? body.backup?.id;
+    const rawTargetId = body.id ?? body.targetId ?? body.resourceId ?? body.memo?.id ?? body.target?.id ?? body.backup?.id ?? req.query?.id ?? req.query?.targetId;
     const targetParsed = parseMemoResourceId(String(rawTargetId ?? ''));
-    const cleanId = targetParsed?.id ?? (rawTargetId ? String(rawTargetId) : '00000000-0000-4000-8000-00000000000b');
+    const cleanId = targetParsed?.id ?? (rawTargetId ? String(rawTargetId) : null);
+
+    if (!cleanId) {
+      return deny(res, 400, 'missing_target_id', '복원할 메모의 ID가 지정되지 않았습니다.');
+    }
 
     // 서버 저장소에 사전 보관된 원본 사본을 다시 읽어옵니다.
     const backupSource = loadBackupNote(cleanId, verifiedUserId);
