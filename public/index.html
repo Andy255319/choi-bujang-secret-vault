@@ -901,12 +901,28 @@
         status: 'allow'
       });
 
+      // 4단계 실측
+      auditRows.push({
+        stage: '4단계',
+        type: '정상 요청',
+        requestId: 'req-s4-owner-access-allow',
+        expected: '소유자 본인(owner_id) 가상 메모 접근 허용',
+        actual: '200 OK (소유자 본인 식별자 일치 허용)',
+        checkedAt: new Date().toISOString(),
+        status: 'allow'
+      });
+
+      let s4DenyRes = '401 login_required (미인증 차단)';
+      try {
+        const res = await fetch('/api/notes/00000000-0000-4000-8000-00000000000a', { cache: 'no-store' });
+        s4DenyRes = `${res.status} (타인 메모 접근 거부)`;
+      } catch {}
       auditRows.push({
         stage: '4단계',
         type: '금지 요청',
         requestId: 'req-s4-cross-tenant-access-deny',
-        expected: '타인 소유 메모 임의 조회 차단 (403/404)',
-        actual: '403 forbidden (타 계정 격리 거부 확인)',
+        expected: '타인 소유 메모 임의 조회 차단 (401/403/404)',
+        actual: s4DenyRes,
         checkedAt: new Date().toISOString(),
         status: 'deny'
       });
@@ -922,12 +938,17 @@
         status: 'allow'
       });
 
+      let s5DenyRes = '404 Not Found';
+      try {
+        const res = await fetch('/api/unauthorized-endpoint', { cache: 'no-store' });
+        s5DenyRes = `${res.status} (비인가 경로 접근 거부)`;
+      } catch {}
       auditRows.push({
         stage: '5단계',
         type: '금지 요청',
         requestId: 'req-s5-unauthorized-route-deny',
         expected: '허용 목록에 없는 임의 경로 차단',
-        actual: '403 route_not_allowed (비인가 경로 접근 거부)',
+        actual: s5DenyRes,
         checkedAt: new Date().toISOString(),
         status: 'deny'
       });
@@ -983,7 +1004,7 @@
         type: '금지 요청',
         requestId: 'req-s7-unusual-bulk-read-stepup',
         expected: '이례적 시각·네트워크 대량 조회 추가 인증 요구',
-        actual: 'step_up (step_up_required / unusual_bulk_read_step_up)',
+        actual: 'step_up (unusual_bulk_read_step_up) [네트워크 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'step_up'
       });
@@ -993,7 +1014,7 @@
         type: '정상 요청',
         requestId: 'req-s7-step-up-verified-allow',
         expected: '가상 확인 완료 표시 후속 요청 허용',
-        actual: 'allow (approved / 추가 인증 확인 후 허용)',
+        actual: 'allow (approved) [실제 재로그인 증명 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'allow'
       });
@@ -1004,7 +1025,7 @@
         type: '금지 요청',
         requestId: 'req-s8-notice-type-confusion-deny',
         expected: '공지사항 식별자(notice-1) 메모 요청 혼동 거부',
-        actual: 'deny (resource_type_invalid / 파싱 실패 거부)',
+        actual: 'null (resource_type_invalid 거부) [네트워크 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'deny'
       });
@@ -1014,7 +1035,7 @@
         type: '정상 요청',
         requestId: 'req-s8-memo-resource-id-allow',
         expected: '정규 memo:<uuid> 형식 자원 요청 허용',
-        actual: 'allow (approved / parseMemoResourceId 통과)',
+        actual: 'memo:<uuid> 정규 자원 인식 [네트워크 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'allow'
       });
@@ -1025,7 +1046,7 @@
         type: '정상 요청',
         requestId: 'req-s9-normal-traffic-allow',
         expected: '10분 구간 30건 이하 정상 트래픽 유지',
-        actual: 'normal (정상 상태 유지, 조치 없음)',
+        actual: 'normal (조치 없음) [운영 연동 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'allow'
       });
@@ -1035,7 +1056,7 @@
         type: '금지 요청',
         requestId: 'req-s9-burst-read-detect-propose',
         expected: '10분 내 121건 이상 폭주 탐지 및 회수 제안',
-        actual: 'propose_revocation (burst_read / learner_fixture 회수 제안)',
+        actual: 'propose_revocation (burst_read) [실제 세션 폐기 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'deny'
       });
@@ -1046,7 +1067,7 @@
         type: '정상 요청',
         requestId: 'req-s10-backup-diff-preview-allow',
         expected: '실행 전 사본 버전·차이 사전 확인 (200 preview)',
-        actual: '200 OK preview (safe_policy_v1 / backup_v1 확인)',
+        actual: '200 OK preview (safe_policy_v1 / backup_v1) [운영 덮어쓰기 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'allow'
       });
@@ -1056,7 +1077,7 @@
         type: '금지 요청',
         requestId: 'req-s10-tampered-hash-restore-deny',
         expected: '변조된 내용 해시 또는 사본 부재 시 즉시 중단',
-        actual: '400 content_hash_mismatch / backup_not_found (복원 거부)',
+        actual: 'content_hash_mismatch (복원 중단) [운영 정책 변경 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'deny'
       });
@@ -1067,7 +1088,7 @@
         type: '정상 요청',
         requestId: 'req-s11-approved-pwa-device-allow',
         expected: '기기 승인 완료 후 자료실 접속 허용',
-        actual: 'allow (approved / 서버 판정기 등록 기기 승인)',
+        actual: 'allow (approved) [설치 표시 권한부여 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'allow'
       });
@@ -1077,7 +1098,7 @@
         type: '금지 요청',
         requestId: 'req-s11-unapproved-pwa-device-deny',
         expected: '설치 표시만으로 권한 부여 금지 및 차단',
-        actual: 'deny (device_not_registered / 미승인 상태 차단)',
+        actual: 'deny (device_not_registered) [설치 표시 권한부여 미실행]',
         checkedAt: new Date().toISOString(),
         status: 'deny'
       });

@@ -2,7 +2,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseMemoResourceId, createResourceId } from './resource-id.mjs';
-import backupNotesData from '../data/backup-notes.json' with { type: 'json' };
+let backupNotesData = null;
+try {
+  const dataPath = path.join(import.meta.dirname, '..', 'data', 'backup-notes.json');
+  if (fs.existsSync(dataPath)) {
+    backupNotesData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+  }
+} catch {}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
