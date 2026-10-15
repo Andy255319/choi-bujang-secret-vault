@@ -328,6 +328,7 @@
     };
 
     let supabase = null;
+    let currentSession = null;
 
     async function getSupabase() {
       if (supabase) return supabase;
@@ -335,7 +336,7 @@
       const cfg = await res.json();
       supabase = createClient(cfg.supabaseUrl, cfg.supabaseKey, {
         auth: {
-          persistSession: false,
+          persistSession: true,
           autoRefreshToken: false,
           detectSessionInUrl: false,
           storage: inMemoryStorage
@@ -351,7 +352,13 @@
 
     async function getAuthHeaders() {
       const sb = await getSupabase();
-      const { data: { session } } = await sb.auth.getSession();
+      let session = currentSession;
+      if (!session) {
+        try {
+          const { data } = await sb.auth.getSession();
+          session = data?.session;
+        } catch {}
+      }
       return {
         'Authorization': `Bearer ${session ? session.access_token : ''}`,
         'Content-Type': 'application/json'
@@ -464,13 +471,56 @@
       }
     }
 
+    function updateAuthUI(session) {
+      currentSession = session;
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch {}
+      if (session) {
+        loginSection.style.display = 'none';
+        mainSection.style.display = 'block';
+        deviceApprovalSection.style.display = 'block';
+        vaultSection.style.display = 'none';
+        approvalResult.style.display = 'none';
+        approvalStatusBadge.textContent = '승인 대기 중 (미확인 기기)';
+        approvalStatusBadge.className = 'status-badge';
+        deviceApprovalBadge.textContent = '기기 승인: 서버 판정기 검증 필요';
+        deviceApprovalBadge.className = 'status-badge';
+        list.innerHTML = '';
+      } else {
+        loginSection.style.display = 'block';
+        mainSection.style.display = 'none';
+        deviceApprovalSection.style.display = 'none';
+        vaultSection.style.display = 'none';
+        list.innerHTML = '';
+      }
+      fetchWarRoomStatus();
+      runStageAudit();
+    }
+
     document.getElementById('login-btn').addEventListener('click', async () => {
-      const email = document.getElementById('email').value;
+      const email = document.getElementById('email').value?.trim();
       const password = document.getElementById('password').value;
-      loginError.textContent = '';
-      const sb = await getSupabase();
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) loginError.textContent = `로그인 실패: ${error.message}`;
+      if (!email || !password) {
+        loginError.textContent = '이메일 주소와 비밀번호를 모두 입력해 주세요.';
+        return;
+      }
+      loginError.textContent = '접속 확인 중...';
+      try {
+        const sb = await getSupabase();
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) {
+          loginError.textContent = `로그인 실패: ${error.message}`;
+          return;
+        }
+        if (data?.session) {
+          loginError.textContent = '';
+          updateAuthUI(data.session);
+        }
+      } catch (err) {
+        loginError.textContent = `로그인 오류: ${err.message}`;
+      }
     });
 
     document.getElementById('logout-btn').addEventListener('click', async () => {
@@ -478,8 +528,13 @@
         localStorage.clear();
         sessionStorage.clear();
       } catch {}
-      const sb = await getSupabase();
-      await sb.auth.signOut();
+      currentSession = null;
+      inMemoryStorage._store.clear();
+      try {
+        const sb = await getSupabase();
+        await sb.auth.signOut();
+      } catch {}
+      updateAuthUI(null);
     });
 
     // 오프라인 상태 감지 및 안내 배너 표시
@@ -1088,25 +1143,8 @@
           localStorage.clear();
           sessionStorage.clear();
         } catch {}
-        fetchWarRoomStatus();
-        runStageAudit();
         if (session) {
-          loginSection.style.display = 'none';
-          mainSection.style.display = 'block';
-          deviceApprovalSection.style.display = 'block';
-          vaultSection.style.display = 'none';
-          approvalResult.style.display = 'none';
-          approvalStatusBadge.textContent = '승인 대기 중 (미확인 기기)';
-          approvalStatusBadge.className = 'status-badge';
-          deviceApprovalBadge.textContent = '기기 승인: 서버 판정기 검증 필요';
-          deviceApprovalBadge.className = 'status-badge';
-          list.innerHTML = '';
-        } else {
-          loginSection.style.display = 'block';
-          mainSection.style.display = 'none';
-          deviceApprovalSection.style.display = 'none';
-          vaultSection.style.display = 'none';
-          list.innerHTML = '';
+          updateAuthUI(session);
         }
       });
     })();
