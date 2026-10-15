@@ -31,3 +31,13 @@
 {"timestamp":"2026-09-27T13:17:05+09:00","alertId":"pv-15","action":"alert","reason":"모니터링 알림: 경보 pv-15 기반 관리자 그룹 추가 의심"}
 {"timestamp":"2026-09-27T14:07:22+09:00","alertId":"pv-16","action":"alert","reason":"모니터링 알림: 경보 pv-16 기반 처음 보는 관리자 명령 의심"}
 {"timestamp":"2026-09-27T15:19:41+09:00","alertId":"pv-17","action":"alert","reason":"모니터링 알림: 경보 pv-17 기반 관리자 그룹 추가 의심"}
+{"timestamp":"2026-09-27T09:24:10+09:00","alertId":"ex-11","action":"alert","reason":"모니터링 알림: 경보 ex-11 기반 처음 보는 목적지로 대용량 전송 의심"}
+{"timestamp":"2026-09-27T09:52:22+09:00","alertId":"ex-12","action":"alert","reason":"모니터링 알림: 경보 ex-12 기반 처음 보는 목적지로 대용량 전송 의심"}
+{"timestamp":"2026-09-27T10:17:36+09:00","alertId":"ex-13","action":"alert","reason":"모니터링 알림: 경보 ex-13 기반 업무 시간 밖 압축 파일 반출 의심"}
+{"timestamp":"2026-09-27T10:46:04+09:00","alertId":"ex-14","action":"alert","reason":"모니터링 알림: 경보 ex-14 기반 처음 보는 목적지로 대용량 전송 의심"}
+{"timestamp":"2026-09-27T11:19:13+09:00","alertId":"ex-15","action":"alert","reason":"모니터링 알림: 경보 ex-15 기반 처음 보는 목적지로 대용량 전송 의심"}
+{"timestamp":"2026-09-27T12:13:29+09:00","alertId":"ex-16","action":"alert","reason":"모니터링 알림: 경보 ex-16 기반 처음 보는 목적지로 대용량 전송 의심"}
+{"timestamp":"2026-09-27T13:21:07+09:00","alertId":"ex-17","action":"alert","reason":"모니터링 알림: 경보 ex-17 기반 처음 보는 목적지로 대용량 전송 의심"}
+{"timestamp":"2026-09-27T14:12:44+09:00","alertId":"ex-18","action":"alert","reason":"모니터링 알림: 경보 ex-18 기반 처음 보는 목적지로 대용량 전송 의심"}
+{"timestamp":"2026-09-27T15:06:18+09:00","alertId":"ex-19","action":"alert","reason":"모니터링 알림: 경보 ex-19 기반 명령 통로를 통한 자료 유출 의심"}
+{"timestamp":"2026-09-27T15:55:02+09:00","alertId":"ex-20","action":"alert","reason":"모니터링 알림: 경보 ex-20 기반 업무 시간 밖 압축 파일 반출 의심"}

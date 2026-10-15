@@ -291,6 +291,12 @@ node --test test/restore.test.mjs
    npm run xdr:run -- privilege
    ```
    - **정상 결과**: 명확한 공격 9건 차단(`block`), 애매한 시도 8건 모니터링 알림(`alert`), 정상 활동 9건 기록(`record`) 총 26건 분류 및 `xdr/privilege/result.json` 생성.
+8. 보너스 XDR 자료 빼돌리기(exfiltration) 경보 판정:
+   ```sh
+   npm run xdr:run -- exfiltration
+   ```
+   - **정상 결과**: 명확한 공격 10건 차단(`block`), 애매한 시도 10건 모니터링 알림(`alert`), 정상 활동 10건 기록(`record`) 총 30건 분류 및 `xdr/exfiltration/result.json` 생성.
+
 
 
 
