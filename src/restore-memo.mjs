@@ -54,9 +54,11 @@ function verifyLoadedBackup(item) {
  * 사본을 다시 읽은 뒤 내용 해시를 실시간 검증하며, 사본이 없거나 검증 실패 시 즉시 null을 반환하여 멈춥니다.
  */
 export function loadBackupNote(targetId, ownerId) {
-  const parsedTarget = parseMemoResourceId(String(targetId ?? ''));
-  const cleanId = parsedTarget?.id ?? (targetId ? String(targetId) : '00000000-0000-4000-8000-00000000000b');
-  if (!cleanId) return null;
+  if (!targetId) return null; // 대상 ID가 주어지지 않으면 임의 기본값 폴백 없이 즉시 null (사본 부재 중단)
+
+  const parsedTarget = parseMemoResourceId(String(targetId));
+  const cleanId = parsedTarget?.id ?? String(targetId);
+  if (!cleanId || !UUID.test(cleanId)) return null;
 
   // 1. 파일에서 먼저 실시간으로 다시 읽기 시도 및 무결성 검증 (다양한 런타임 경로)
   const candidatePaths = [
@@ -122,26 +124,30 @@ export function loadBackupNote(targetId, ownerId) {
 export function extractBackupSource(body, targetId, ownerId) {
   if (!body || typeof body !== 'object') return null;
 
-  const parsedTarget = parseMemoResourceId(String(targetId ?? ''));
-  const cleanId = parsedTarget?.id ?? String(targetId ?? '');
+  const parsedTarget = targetId ? parseMemoResourceId(String(targetId)) : null;
+  const cleanId = parsedTarget?.id ?? (targetId ? String(targetId) : null);
 
   // 1) body.backup이 배열인 경우
   if (Array.isArray(body.backup)) {
-    const found = body.backup.find(item => {
-      const p = parseMemoResourceId(String(item.id ?? ''));
-      return (p?.id ?? item.id) === cleanId;
-    });
-    if (found) return found;
+    if (cleanId) {
+      const found = body.backup.find(item => {
+        const p = parseMemoResourceId(String(item.id ?? ''));
+        return (p?.id ?? item.id) === cleanId;
+      });
+      if (found) return found;
+    }
     if (body.backup.length > 0) return body.backup[0];
   }
 
   // 2) body.backup.notes가 배열인 경우
   if (Array.isArray(body.backup?.notes)) {
-    const found = body.backup.notes.find(item => {
-      const p = parseMemoResourceId(String(item.id ?? ''));
-      return (p?.id ?? item.id) === cleanId;
-    });
-    if (found) return found;
+    if (cleanId) {
+      const found = body.backup.notes.find(item => {
+        const p = parseMemoResourceId(String(item.id ?? ''));
+        return (p?.id ?? item.id) === cleanId;
+      });
+      if (found) return found;
+    }
     if (body.backup.notes.length > 0) return body.backup.notes[0];
   }
 
@@ -153,11 +159,13 @@ export function extractBackupSource(body, targetId, ownerId) {
   // 4) body.backupNotes 또는 body.notes가 배열인 경우
   const candidateList = Array.isArray(body.backupNotes) ? body.backupNotes : (Array.isArray(body.notes) ? body.notes : null);
   if (candidateList) {
-    const found = candidateList.find(item => {
-      const p = parseMemoResourceId(String(item.id ?? ''));
-      return (p?.id ?? item.id) === cleanId;
-    });
-    if (found) return found;
+    if (cleanId) {
+      const found = candidateList.find(item => {
+        const p = parseMemoResourceId(String(item.id ?? ''));
+        return (p?.id ?? item.id) === cleanId;
+      });
+      if (found) return found;
+    }
     if (candidateList.length > 0) return candidateList[0];
   }
 
@@ -184,7 +192,7 @@ export function verifyBackupIntegrity(target, backupSample, verifiedUserId) {
   if (!backupSample || typeof backupSample !== 'object') {
     return { valid: false, reason: 'backup_not_found', message: '사본이 없거나 검증에 실패하여 멈춥니다.' };
   }
-  if (!target || typeof target !== 'object') {
+  if (!target || typeof target !== 'object' || Object.keys(target).length === 0) {
     return { valid: false, reason: 'missing_target', message: '복구 대상 정보가 없습니다.' };
   }
 
@@ -200,26 +208,33 @@ export function verifyBackupIntegrity(target, backupSample, verifiedUserId) {
   }
 
   // 1. ID 대조 (단건 자원 ID 규격 검증 및 사본 ID와 일치 확인)
-  const targetRawId = target.id ?? backupSample.id;
-  const parsedTargetId = parseMemoResourceId(String(targetRawId ?? ''));
-  const parsedBackupId = parseMemoResourceId(String(backupSample.id ?? ''));
-  if (!parsedTargetId || parsedTargetId.type !== 'memo') {
-    return { valid: false, reason: 'invalid_memo_resource_id', message: '올바른 메모 자원 ID가 아닙니다.' };
+  const targetRawId = target.id ?? target.resourceId;
+  if (!targetRawId && !target.content && !target.contentHash) {
+    return { valid: false, reason: 'missing_target_id', message: '복구 대상 ID가 지정되지 않았습니다.' };
   }
-  if (target.id && parsedBackupId && parsedTargetId.id !== parsedBackupId.id) {
-    return { valid: false, reason: 'id_mismatch', message: '대상 ID가 사본의 ID와 일치하지 않습니다.' };
+
+  if (targetRawId) {
+    const parsedTargetId = parseMemoResourceId(String(targetRawId));
+    const parsedBackupId = parseMemoResourceId(String(backupSample.id ?? ''));
+    if (!parsedTargetId || parsedTargetId.type !== 'memo') {
+      return { valid: false, reason: 'invalid_memo_resource_id', message: '올바른 메모 자원 ID가 아닙니다.' };
+    }
+    if (parsedBackupId && parsedTargetId.id !== parsedBackupId.id) {
+      return { valid: false, reason: 'id_mismatch', message: '대상 ID가 사본의 ID와 일치하지 않습니다.' };
+    }
   }
 
   // 2. 소유자 대조 (사본의 owner_id와 대상의 owner_id 일치 확인)
-  const targetOwner = target.owner_id ?? backupSample.owner_id;
-  if (!targetOwner || !UUID.test(targetOwner)) {
-    return { valid: false, reason: 'invalid_owner_id', message: '올바른 소유자 ID가 아닙니다.' };
-  }
-  if (target.owner_id && backupSample.owner_id && target.owner_id !== backupSample.owner_id) {
-    return { valid: false, reason: 'owner_mismatch', message: '소유자가 사본의 소유자와 일치하지 않습니다.' };
+  if (target.owner_id) {
+    if (!UUID.test(target.owner_id)) {
+      return { valid: false, reason: 'invalid_owner_id', message: '올바른 소유자 ID가 아닙니다.' };
+    }
+    if (backupSample.owner_id && target.owner_id !== backupSample.owner_id) {
+      return { valid: false, reason: 'owner_mismatch', message: '소유자가 사본의 소유자와 일치하지 않습니다.' };
+    }
   }
 
-  // 3. 내용 해시 대조 (사본의 contentHash와 실시간 계산 해시 대조)
+  // 3. 내용 및 내용 해시 대조 (사본의 contentHash와 실시간 계산 해시 대조)
   const expectedHash = backupDeclaredHash ?? realBackupHash;
 
   // 만약 대상 객체에 내용(content)이 전달된 경우, 실시간 계산 해시 대조
@@ -237,10 +252,11 @@ export function verifyBackupIntegrity(target, backupSample, verifiedUserId) {
     return { valid: false, reason: 'content_hash_mismatch', message: '제공된 해시가 사본의 해시와 일치하지 않습니다. (변조 거부)' };
   }
 
+  const verifiedId = backupSample.id;
   return {
     valid: true,
-    verifiedId: parsedTargetId.id,
-    resourceId: createResourceId('memo', parsedTargetId.id),
+    verifiedId,
+    resourceId: createResourceId('memo', verifiedId),
     ownerId: backupSample.owner_id,
     contentHash: expectedHash,
     version: backupSample.version ?? 'backup_v1',

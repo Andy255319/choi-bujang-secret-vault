@@ -106,17 +106,25 @@ export async function runAttackChecks(config) {
       const tamperedResult = hasBackup ? verifyBackupIntegrity({ ...backupSample, content: '변조된 내용', contentHash: 'badhash' }, backupSample, backupSample.owner_id) : { valid: true };
       const missingBackupResult = verifyBackupIntegrity({ id: 'non-existent' }, null, '00000000-0000-4000-8000-00000000000b');
 
+      const isRestoreVerified = hasBackup && matchResult.valid && !tamperedResult.valid && !missingBackupResult.valid;
+
+      checks.push({
+        attackId: 'backup_unverified_tampered_restore_blocked',
+        expected: '사본 실시간 재검증 및 ID·소유자·내용 해시 불일치 또는 사본 부재 시 복원 즉시 중단',
+        observed: isRestoreVerified
+          ? '사본 파일 실시간 재조회 확인, ID·소유자·내용 해시 일치 시만 통과하고 사본 부재·변조 시 복원 즉시 중단 확인'
+          : '사본 무결성 검증 실패 또는 변조 시 중단 미작동',
+      });
+
       const policyDiff = getPolicyDiff(['device_registered', 'step_up_required'], SAFE_POLICY_BACKUP);
       const isPolicyVerified = policyDiff.verified && policyDiff.changes.rulesToRestore.length > 0;
 
-      const isRestoreVerified = hasBackup && matchResult.valid && !tamperedResult.valid && !missingBackupResult.valid && isPolicyVerified;
-
       checks.push({
-        attackId: 'backup_single_memo_restore_verified',
-        expected: '사본 재조회 및 정책·메모 무결성 대조 시 단건 복원 통과 및 변조·사본부재 중단',
-        observed: isRestoreVerified
-          ? '사본 파일 재조회 확인, ID·소유자·내용 해시 일치 시 통과 및 변조·사본부재 시 복원 중단 확인'
-          : '단건 사본 복원 및 정책 검증 실패',
+        attackId: 'policy_diff_and_version_preview_verified',
+        expected: '실행 전 안전 정책 사본 버전과 바뀔 항목(변경 범위) 확인 및 실제 운영 정책 보존',
+        observed: isPolicyVerified
+          ? `실행 전 정책 버전(${policyDiff.targetVersion}) 및 복원 대상 규칙 확인 완료, 실제 운영 정책 보존 확인`
+          : '정책 차이 계산 및 변경 범위 확인 실패',
       });
     }
 
