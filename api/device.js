@@ -45,7 +45,7 @@ export default async function handler(req, res) {
       classId: 'class_main',
       projectId: 'project_vault',
       subjectId: user.userId,
-      deviceId: '0123456789abcdef',
+      deviceId: crypto.randomBytes(8).toString('hex'),
       service: 'device',
       method: req.method || 'POST',
       path: '/api/device',
