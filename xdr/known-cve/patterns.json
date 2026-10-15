@@ -1,0 +1,24 @@
+{
+  "technique": {
+    "id": "T1190",
+    "name": "Exploit Public-Facing Application",
+    "source": "MITRE ATT&CK"
+  },
+  "patterns": [
+    {
+      "name": "요청 머리글 내 원격 조회 구문",
+      "condition": "HTTP 요청 머리글에 ${jndi:ldap://...} 형태의 원격 조회 구문이 포함되어 있는지 찾습니다.",
+      "evidence": "CVE-2021-44228 형태 요청과 MITRE ATT&CK T1190에 기반하며, 머리글의 jndi 원격 조회 구문은 취약점 악용 시도의 신호입니다."
+    },
+    {
+      "name": "요청 인자 내 원격 조회 구문",
+      "condition": "HTTP 요청 주소나 인자 값에 ${jndi:ldap://...} 형태의 원격 조회 구문이 포함되어 있는지 찾습니다.",
+      "evidence": "CVE-2021-44228 형태 요청과 MITRE ATT&CK T1190에 기반하며, 요청 인자의 jndi 원격 조회 구문은 취약점 악용 시도의 신호입니다."
+    },
+    {
+      "name": "취약점 점검 도구 흔적과 원격 조회 구문 결합",
+      "condition": "취약점 점검 도구의 probe 파라미터나 스캔 흔적이 원격 조회 구문과 함께 나타나는지 찾습니다.",
+      "evidence": "CVE-2021-44228 형태 요청과 MITRE ATT&CK T1190에 기반하며, 점검 흔적과 원격 조회 구문의 결합은 취약점 악용 시도의 신호입니다."
+    }
+  ]
+}

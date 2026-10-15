@@ -7,3 +7,11 @@
 {"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-15","action":"alert","reason":"모니터링 알림: 경보 wi-15 기반 요청 인자 안 SQL 구문 의심"}
 {"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-16","action":"alert","reason":"모니터링 알림: 경보 wi-16 기반 요청 인자 안 SQL 구문 의심"}
 {"timestamp":"2026-10-08T02:21:15.929Z","alertId":"wi-17","action":"alert","reason":"모니터링 알림: 경보 wi-17 기반 요청 인자 안 SQL 구문 의심"}
+{"timestamp":"2026-09-27T09:28:11+09:00","alertId":"kc-09","action":"alert","reason":"모니터링 알림: 경보 kc-09 기반 요청 인자 내 원격 조회 구문 의심"}
+{"timestamp":"2026-09-27T09:46:30+09:00","alertId":"kc-10","action":"alert","reason":"모니터링 알림: 경보 kc-10 기반 요청 인자 내 원격 조회 구문 의심"}
+{"timestamp":"2026-09-27T10:12:07+09:00","alertId":"kc-11","action":"alert","reason":"모니터링 알림: 경보 kc-11 기반 요청 인자 내 원격 조회 구문 의심"}
+{"timestamp":"2026-09-27T10:38:19+09:00","alertId":"kc-12","action":"alert","reason":"모니터링 알림: 경보 kc-12 기반 요청 머리글 내 원격 조회 구문 의심"}
+{"timestamp":"2026-09-27T11:16:28+09:00","alertId":"kc-13","action":"alert","reason":"모니터링 알림: 경보 kc-13 기반 취약점 점검 도구 흔적과 원격 조회 구문 결합 의심"}
+{"timestamp":"2026-09-27T12:09:04+09:00","alertId":"kc-14","action":"alert","reason":"모니터링 알림: 경보 kc-14 기반 요청 인자 내 원격 조회 구문 의심"}
+{"timestamp":"2026-09-27T13:22:13+09:00","alertId":"kc-15","action":"alert","reason":"모니터링 알림: 경보 kc-15 기반 요청 인자 내 원격 조회 구문 의심"}
+{"timestamp":"2026-09-27T14:11:36+09:00","alertId":"kc-16","action":"alert","reason":"모니터링 알림: 경보 kc-16 기반 요청 인자 내 원격 조회 구문 의심"}
