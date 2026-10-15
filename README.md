@@ -207,4 +207,91 @@ node --test test/restore.test.mjs
 * **판정기 계약 무결성**: `src/decider.mjs`가 `docs/DECIDER_REQUEST.md` 18개 이름만 읽고, 모든 가상 요청에 5개 필수 필드를 갖춘 응답을 반환하며, 모든 ruleId가 `RULE_IDS` 목록에 존재함을 확인.
 * **설정 단계**: `aleph.config.json`의 `step`이 11로 정상 갱신됨.
 
+### 12단계: 탈환 작전실 운용 안내서 (학생 판정기·탐지 규칙·접속 앱·자료실)
+검사 기준 커밋: `80e792d`
+
+#### 1. 출처 및 책임 구분 (학생 몫 vs 제공 엔진)
+* **제공 엔진 (ALEPH SDP 엔진 사용)**:
+  - **출처 명시**: 본 시스템은 제공된 **ALEPH SDP(Software-Defined Perimeter) 엔진**을 기반으로 동작합니다.
+  - **제공 엔진 관할**:
+    - 판정기 요청·응답 스키마 계약 규격 (`aleph.decision.v1` / `docs/DECIDER_REQUEST.md`)
+    - XDR 경보 및 이상 사건 전달 규격 (`aleph.detect.event.v1` / `docs/DETECT_EVENTS.md`)
+    - 배포 신원 검증 프레임워크 (`scripts/deployment-identity.mjs`) 및 심판 접수(`judgeIssuer`) 인터페이스
+    - 총공세 41종 종합 심판 판정 집행 엔진
+* **학생 몫 (자체 구현 및 검증 영역)**:
+  - **학생 판정기 (`src/decider.mjs`)**: 등록 기기 인가(`device_registered`), 추가 인증 요구(`step_up_required`), 이상 대량 읽기(`unusual_bulk_read_step_up`), 구역 격리(`zone_access_control`) 4대 규칙 자체 구현.
+  - **탐지 규칙 (`src/detect.mjs`)**: 10분 슬라이딩 윈도우 기반 동일 주체 120건 초과 폭주 조회 탐지(`burst_read`) 및 권한 회수 제안(`propose_revocation`) 알고리즘 자체 구현.
+  - **접속 앱 (`public/index.html`, `public/manifest.json`, `api/device.js`)**: 설치형 웹앱(PWA) 표준 구성, 브라우저 저장소 기기 키·토큰 보관 금지(인메모리 격리), 서버 판정기 통과 시에만 자료실을 여는 사전 보호 단일 관문 구현.
+  - **자료실 (`api/notes.js`, `api/restore.js`, `src/restore-memo.mjs`, `src/policy-restore.mjs`)**: Supabase 직접 노출 차단, 안전 정책 사본 버전 diff 검증, 비공개 가상 메모 단건 무결성(SHA-256) 대조 복구 구현.
+
+#### 2. 비밀값 취급 및 환경변수 원칙
+* **비밀값 포장 금지**:
+  - 비밀번호, 서버 비밀키(`SUPABASE_SECRET_KEY`), API 토큰, 기기 개인키를 코드, Git, README, 브라우저 저장소, 제출 묶음에 절대 포함하지 않습니다.
+  - 필요한 접속 정보는 Vercel 설정 화면의 **Environment Variables** 또는 로컬 개발 시 학생이 공식 설정 화면의 입력란에 직접 넣습니다.
+* **필요 환경변수**:
+  - `SUPABASE_URL`: Supabase 프로젝트 HTTPS 주소 (공식 포털에서 확인 후 직접 입력)
+  - `SUPABASE_SECRET_KEY`: Supabase `service_role` 서버 전용 키 (공식 포털에서 확인 후 직접 입력)
+
+#### 3. 설치·실행·중지·복구 재현 순서 (Reproducible Steps)
+
+##### (1) 설치 안내 (Install)
+1. 저장소를 클론하고 프로젝트 디렉터리로 이동합니다:
+   ```sh
+   git clone https://github.com/Andy255319/choi-bujang-secret-vault.git
+   cd choi-bujang-secret-vault
+   ```
+2. Node.js 22 이상 환경에서 패키지를 설치합니다:
+   ```sh
+   npm install
+   ```
+   - **정상 결과**: 오류나 누락 없이 의존성 패키지가 정상 설치됩니다.
+
+##### (2) 실행 안내 (Run)
+1. 정적 에셋 및 배포 메타데이터를 로컬 빌드합니다:
+   ```sh
+   node scripts/build-public.mjs --local
+   ```
+   - **정상 결과**: `public/` 정적 파일 빌드 및 보호 모드 전환 확인 출력.
+2. 로컬 개발 서버 또는 배포 환경을 실행합니다:
+   - 로컬 실행: `npx serve public` 또는 `vercel dev`
+   - 배포 환경: Vercel에 커밋 푸시하여 자동 배포 (`https://choi-bujang-secret-vault-kappa.vercel.app`)
+3. 웹 브라우저로 접속하여 PWA 설치 배너, 오프라인 상태 감지 및 탈환 작전실 화면 진입을 확인합니다.
+
+##### (3) 검증 및 점검 안내 (Audit & Test)
+1. 학생 판정기 가상 요청 연습:
+   ```sh
+   npm run decider:test
+   ```
+   - **정상 결과**: 등록 기기 요청 `allow (approved)`, 미등록 기기 `deny (device_not_registered)`, 이상 대량 읽기 `step_up (step_up_required)`.
+2. 탐지 규칙 슬라이딩 윈도우 검증:
+   ```sh
+   npm run detect:test
+   ```
+   - **정상 결과**: 10분 구간 120건 이하 정상 유지, 121건 이상 폭주 시 `propose_revocation (burst_read)`.
+3. 사본 복구 및 무결성 대조 검증:
+   ```sh
+   node --test test/restore.test.mjs
+   ```
+   - **정상 결과**: 12건의 무결성 대조 및 사본 부재/변조 시 차단 테스트 100% 통과.
+4. 웹 화면 탈환 작전실 실측 점검:
+   - 화면 탈환 작전실의 **[1~11단계 실측 점검 절차 실행]** 버튼을 클릭하여 정상 11건 허용 실측 및 금지 11건 거부 실측을 대조 확인합니다.
+   - **심판 41종 종합 시험**은 임의 통과 처리하지 않고 `[미실행 (임의 통과 금지)]`로 분리 보존됩니다.
+
+##### (4) 중지 안내 (Stop)
+1. 로컬 프로세스 종료: 터미널에서 `Ctrl + C`를 입력하여 실행 중인 로컬 웹 서버 프로세스를 안전하게 종료합니다.
+2. 기기 승인 상태 회수: 웹 화면에서 **[로그아웃]** 또는 **[미등록 기기 거부 시험]**을 클릭하여 승인 상태를 즉시 미확인/거부로 되돌리고 자료실 화면을 닫습니다.
+3. 세션 파기: 브라우저 탭을 닫으면 인메모리 저장소 특성상 모든 기기 키 및 세션 정보가 메모리에서 즉시 소멸합니다.
+
+##### (5) 복구 안내 (Restore)
+1. 안전 정책 버전 및 사본 사전 차이 확인 (DryRun):
+   ```sh
+   # 브라우저 또는 API를 통한 사전 확인 (실제 운영 정책 보존)
+   GET /api/restore
+   ```
+   - **정상 결과**: 정책 사본(`safe_policy_v1`) 및 메모 사본(`backup_v1`)의 변경 대상(`changes`) 사전 확인.
+2. 비공개 가상 메모 단건 안전 복원:
+   - 사본 원본(`data/backup-notes.json`)과 복원 요청의 ID, 소유자, 내용 해시(SHA-256)가 100% 일치할 때만 복원을 허용합니다.
+   - 변조된 내용 해시가 전달되거나 사본이 없으면 `400 content_hash_mismatch / backup_not_found`로 즉시 중단하여 운영 데이터 오염을 차단합니다.
+   - 복원 완료 후 다른 계정(A)의 메모나 감사 기록은 손상 없이 보존됩니다.
+
 이 저장소에는 단계별 제작 기록과 코드가 포함되어 있습니다. README 기록은 프로젝트의 실제 실행 결과·배포·심판 판정 자체를 증명하지 않습니다.

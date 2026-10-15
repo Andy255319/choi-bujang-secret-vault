@@ -186,14 +186,27 @@ export default async function handler(req, res) {
         dryRun: true,
         version: targetVerification.version,
         targetVersion: targetVerification.version,
+        policyVersion: 'safe_policy_v1',
+        rulesCount: 4,
+        rules: ['device_registered', 'step_up_required', 'unusual_bulk_read_step_up', 'zone_access_control'],
+        detection: {
+          windowMinutes: 10,
+          limit: 120,
+          detectedReason: 'burst_read',
+          action: 'propose_revocation',
+          revocationSubject: 'learner_fixture',
+          revocationStatus: 'proposed',
+          executionStatus: 'unexecuted'
+        },
         id: effectiveNoteId,
         resourceId: targetVerification.resourceId,
         owner_id: targetVerification.ownerId,
         contentHash: targetVerification.contentHash,
         changes: changes.length > 0 ? changes : ['none'],
-        before: currentNote ? { id: currentNote.id, title: currentNote.title, content: currentNote.content } : null,
-        after: { id: effectiveNoteId, title: targetVerification.title, content: targetVerification.content },
-        message: '사본 검증 완료. 실행 전에 버전과 바뀔 항목을 보여 줍니다. 실제 운영 정책은 건드리지 않습니다.',
+        changesCount: changes.length > 0 ? changes.length : 0,
+        before: currentNote ? { id: currentNote.id, title: currentNote.title, contentMasked: true } : null,
+        after: { id: effectiveNoteId, title: targetVerification.title, contentMasked: true },
+        message: '사본 검증 완료. 실행 전에 버전과 바뀔 항목을 보여 줍니다. 가상 메모 본문은 비공개 마스킹 처리되며 실제 운영 정책은 건드리지 않습니다.',
       });
     }
 
