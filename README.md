@@ -281,6 +281,12 @@ node --test test/restore.test.mjs
    npm run xdr:run -- known-cve
    ```
    - **정상 결과**: 명확한 공격 8건 차단(`block`), 애매한 시도 8건 모니터링 알림(`alert`), 정상 활동 8건 기록(`record`) 총 24건 분류 및 `xdr/known-cve/result.json` 생성.
+6. 보너스 XDR 몰래 심어진 프로그램(persistence) 경보 판정:
+   ```sh
+   npm run xdr:run -- persistence
+   ```
+   - **정상 결과**: 명확한 공격 8건 차단(`block`), 애매한 시도 8건 모니터링 알림(`alert`), 정상 활동 8건 기록(`record`) 총 24건 분류 및 `xdr/persistence/result.json` 생성.
+
 
 
 ##### (4) 중지 안내 (Stop)
