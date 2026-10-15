@@ -1,0 +1,19 @@
+{
+  "name": "BYTE BACK 자료실",
+  "short_name": "BYTE BACK",
+  "description": "설치형 웹앱 접속 및 서버 판정기 기반 기기 승인 자료실",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#101a28",
+  "theme_color": "#101a28",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -128,6 +128,30 @@ export async function runAttackChecks(config) {
       });
     }
 
+    if (config.step >= 11) {
+      const { normal } = fixtureRequests();
+      const unregReq = {
+        ...normal,
+        requestId: 'attack-check-device-unregistered-pwa',
+        deviceRegistered: false,
+      };
+      const unregDecision = await decide(unregReq);
+      const regDecision = await decide(normal);
+
+      const isPwaDeviceVerified = unregDecision.decision === 'deny'
+        && unregDecision.reasonCode === 'device_not_registered'
+        && regDecision.decision === 'allow'
+        && regDecision.reasonCode === 'approved';
+
+      checks.push({
+        attackId: 'pwa_device_approval_verification',
+        expected: '설치형 웹앱 접속 시 미등록 기기 차단(device_not_registered) 및 등록 기기 승인(approved)',
+        observed: isPwaDeviceVerified
+          ? '미등록 기기는 거부되고 등록 기기는 승인됨을 확인; 설치 표시만으로 권한을 주지 않음'
+          : '기기 승인 검증 실패',
+      });
+    }
+
     return checks;
   }
 
