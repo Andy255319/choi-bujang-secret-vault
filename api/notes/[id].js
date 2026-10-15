@@ -40,14 +40,15 @@ export default async function handler(req, res) {
 
     // Only rows whose stored owner_id matches the verified principal are eligible.
     if (req.method === 'GET') {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodedId}&owner_id=eq.${encodeURIComponent(ownerId)}&select=id,title,content`, {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodedId}&select=id,title,content,owner_id`, {
         headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` }
       });
       if (!response.ok) return res.status(502).json({ error: 'storage_unavailable' });
       const data = await response.json();
 
       if (!Array.isArray(data)) return res.status(502).json({ error: 'storage_response_invalid' });
-      if (data.length === 0) return deny(res, 404, 'not_found_or_not_owner');
+      if (data.length === 0) return deny(res, 404, 'not_found');
+      if (data[0].owner_id !== ownerId) return deny(res, 403, 'not_owner_forbidden');
 
       const note = { id: data[0].id, resourceId: createResourceId('memo', String(data[0].id)), title: data[0].title, body: data[0].content };
       return res.status(200).json(note);

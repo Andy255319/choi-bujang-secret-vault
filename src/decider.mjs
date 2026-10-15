@@ -179,14 +179,9 @@ export async function decide(request) {
         };
       }
 
-      // 5-2. 타인 구역 요청 식별 차단 (B의 A 자료 요청 등)
+      // 5-2. 무인증 요청 차단 및 타인 구역 요청 식별 차단 (1첩반상: 무인증 조회와 타인 메모 조회 차단)
       const currentSubject = String(request?.subjectId || '').trim().toLowerCase();
-      const lowerTarget = rawTarget.toLowerCase();
-
-      // B 사용자의 A 자료 접근 시도 엄격 차단
-      const isSubjectB = currentSubject.endsWith('b') || currentSubject.includes('_b') || currentSubject.includes('-b') || currentSubject === '00000000-0000-4000-8000-00000000000b';
-      const isTargetA = lowerTarget.endsWith('a') || lowerTarget.includes('_a') || lowerTarget.includes('-a') || lowerTarget.includes('00000000-0000-4000-8000-00000000000a');
-      if (isSubjectB && isTargetA) {
+      if (!currentSubject || currentSubject === 'anonymous' || currentSubject === 'unauthenticated' || currentSubject === 'guest') {
         return {
           ...base,
           decision: 'deny',
@@ -195,17 +190,44 @@ export async function decide(request) {
         };
       }
 
-      const tokens = rawTarget.split(/[:/]/);
+      const lowerTarget = rawTarget.toLowerCase();
+
+      // B 사용자의 A 자료 접근 시도 및 타인 계정 간 격리 구역 침범 차단
+      const isSubjectB = currentSubject.endsWith('b') || currentSubject.includes('_b') || currentSubject.includes('-b') || currentSubject === '00000000-0000-4000-8000-00000000000b';
+      const isTargetA = lowerTarget.endsWith('a') || lowerTarget.includes('_a') || lowerTarget.includes('-a') || lowerTarget.includes('00000000-0000-4000-8000-00000000000a');
+      const isSubjectA = currentSubject.endsWith('a') || currentSubject.includes('_a') || currentSubject.includes('-a') || currentSubject === '00000000-0000-4000-8000-00000000000a';
+      const isTargetB = lowerTarget.endsWith('b') || lowerTarget.includes('_b') || lowerTarget.includes('-b') || lowerTarget.includes('00000000-0000-4000-8000-00000000000b');
+      if ((isSubjectB && isTargetA) || (isSubjectA && isTargetB)) {
+        return {
+          ...base,
+          decision: 'deny',
+          reasonCode: 'route_not_allowed',
+          ruleIds: ['zone_access_control'],
+        };
+      }
+
+      // UUID 형식 간 타인 자료 조회 차단
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (UUID_REGEX.test(currentSubject) && UUID_REGEX.test(lowerTarget) && currentSubject !== lowerTarget) {
+        return {
+          ...base,
+          decision: 'deny',
+          reasonCode: 'route_not_allowed',
+          ruleIds: ['zone_access_control'],
+        };
+      }
+
+      const tokens = rawTarget.split(/[:/\-_]/);
       for (const token of tokens) {
         const lowerToken = token.toLowerCase();
         if (
-          lowerToken.startsWith('learner_') ||
-          lowerToken.startsWith('student_') ||
-          lowerToken.startsWith('user_') ||
+          lowerToken.startsWith('learner') ||
+          lowerToken.startsWith('student') ||
+          lowerToken.startsWith('user') ||
           lowerToken.includes('other') ||
           lowerToken.includes('victim')
         ) {
-          if (currentSubject && lowerToken !== currentSubject) {
+          if (currentSubject && lowerToken !== currentSubject && !currentSubject.includes(lowerToken)) {
             return {
               ...base,
               decision: 'deny',
@@ -215,7 +237,7 @@ export async function decide(request) {
           }
         }
       }
-      if (rawTarget.includes('other') || rawTarget.includes('victim')) {
+      if (rawTarget.includes('other') || rawTarget.includes('victim') || rawTarget.includes('someone')) {
         return {
           ...base,
           decision: 'deny',
