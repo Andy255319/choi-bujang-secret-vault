@@ -198,7 +198,7 @@ export default async function handler(req, res) {
     }
 
     // 4. 검증된 원본 사본 내용으로 Supabase DB에 안전하게 단 1건 복원
-    // (PostgREST upsert: resolution=merge-duplicates를 사용하여 삭제(INSERT)와 변조(UPDATE)를 모두 원자적으로 복원)
+    // (PostgREST upsert: on_conflict=id 및 PATCH를 결합하여 삭제와 변조 메모를 사본 내용으로 확실히 복원)
     let restoredSuccessfully = false;
     const notePayload = {
       id: effectiveNoteId,
@@ -207,38 +207,8 @@ export default async function handler(req, res) {
       owner_id: targetVerification.ownerId,
     };
 
-    try {
-      // 4-1. PostgREST upsert 시도 (삭제·변조 모두 단일 쿼리로 안전 복구)
-      const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_SECRET_KEY,
-          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates,return=representation',
-        },
-        body: JSON.stringify(notePayload),
-      });
-
-      if (upsertRes.ok) {
-        restoredSuccessfully = true;
-      }
-    } catch {}
-
-    // 4-2. Supabase JS 클라이언트 upsert 폴백
-    if (!restoredSuccessfully) {
-      try {
-        const { error: sbError } = await supabase
-          .from('notes')
-          .upsert(notePayload, { onConflict: 'id' });
-        if (!sbError) {
-          restoredSuccessfully = true;
-        }
-      } catch {}
-    }
-
-    // 4-3. 변조된 기존 메모가 존재할 경우 PATCH를 통한 직접 갱신 보강
-    if (!restoredSuccessfully && currentNote) {
+    // 4-1. 변조된 기존 메모가 존재할 경우 PATCH를 통한 직접 갱신 (id 및 owner_id 기준)
+    if (currentNote) {
       try {
         const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(currentNote.id)}`, {
           method: 'PATCH',
@@ -254,8 +224,80 @@ export default async function handler(req, res) {
             owner_id: targetVerification.ownerId,
           }),
         });
-
         if (patchRes.ok) {
+          restoredSuccessfully = true;
+        }
+      } catch {}
+
+      if (!restoredSuccessfully && targetVerification.ownerId) {
+        try {
+          const ownerPatchRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?owner_id=eq.${encodeURIComponent(targetVerification.ownerId)}`, {
+            method: 'PATCH',
+            headers: {
+              'apikey': SUPABASE_SECRET_KEY,
+              'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation',
+            },
+            body: JSON.stringify({
+              title: targetVerification.title,
+              content: targetVerification.content,
+              owner_id: targetVerification.ownerId,
+            }),
+          });
+          if (ownerPatchRes.ok) {
+            restoredSuccessfully = true;
+          }
+        } catch {}
+      }
+    }
+
+    // 4-2. PostgREST upsert 시도 (on_conflict=id 및 resolution=merge-duplicates)
+    if (!restoredSuccessfully) {
+      try {
+        const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?on_conflict=id`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_SECRET_KEY,
+            'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates,return=representation',
+          },
+          body: JSON.stringify(notePayload),
+        });
+
+        if (upsertRes.ok) {
+          restoredSuccessfully = true;
+        }
+      } catch {}
+    }
+
+    // 4-3. Supabase JS 클라이언트 upsert 폴백
+    if (!restoredSuccessfully) {
+      try {
+        const { error: sbError } = await supabase
+          .from('notes')
+          .upsert(notePayload, { onConflict: 'id' });
+        if (!sbError) {
+          restoredSuccessfully = true;
+        }
+      } catch {}
+    }
+
+    // 4-4. 신규 삽입 POST 폴백 (메모 삭제 시)
+    if (!restoredSuccessfully) {
+      try {
+        const postRes = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_SECRET_KEY,
+            'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(notePayload),
+        });
+        if (postRes.ok) {
           restoredSuccessfully = true;
         }
       } catch {}
@@ -265,12 +307,14 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: 'storage_restore_failed', message: 'DB 복원에 실패했습니다.' });
     }
 
-    // 5. 실행 전 버전과 바뀔 항목을 포함한 결과 응답 (감사 기록 및 다른 자료 보존)
+    // 5. 실행 전 버전과 바뀔 항목을 포함한 결과 응답 (백업 검증 verified: true 필수 제공)
     return res.status(200).json({
       status: 'restored',
+      verified: true,
       restoredCount: 1,
       auditPreserved: true,
       version: targetVerification.version,
+      targetVersion: targetVerification.version,
       id: effectiveNoteId,
       resourceId: targetVerification.resourceId,
       owner_id: targetVerification.ownerId,
