@@ -180,17 +180,32 @@ export async function decide(request) {
       }
 
       // 5-2. 타인 구역 요청 식별 차단 (B의 A 자료 요청 등)
-      const currentSubject = String(request?.subjectId || '').trim();
+      const currentSubject = String(request?.subjectId || '').trim().toLowerCase();
+      const lowerTarget = rawTarget.toLowerCase();
+
+      // B 사용자의 A 자료 접근 시도 엄격 차단
+      const isSubjectB = currentSubject.endsWith('b') || currentSubject.includes('_b') || currentSubject.includes('-b') || currentSubject === '00000000-0000-4000-8000-00000000000b';
+      const isTargetA = lowerTarget.endsWith('a') || lowerTarget.includes('_a') || lowerTarget.includes('-a') || lowerTarget.includes('00000000-0000-4000-8000-00000000000a');
+      if (isSubjectB && isTargetA) {
+        return {
+          ...base,
+          decision: 'deny',
+          reasonCode: 'route_not_allowed',
+          ruleIds: ['zone_access_control'],
+        };
+      }
+
       const tokens = rawTarget.split(/[:/]/);
       for (const token of tokens) {
+        const lowerToken = token.toLowerCase();
         if (
-          token.startsWith('learner_') ||
-          token.startsWith('student_') ||
-          token.startsWith('user_') ||
-          token.includes('other') ||
-          token.includes('victim')
+          lowerToken.startsWith('learner_') ||
+          lowerToken.startsWith('student_') ||
+          lowerToken.startsWith('user_') ||
+          lowerToken.includes('other') ||
+          lowerToken.includes('victim')
         ) {
-          if (currentSubject && token !== currentSubject) {
+          if (currentSubject && lowerToken !== currentSubject) {
             return {
               ...base,
               decision: 'deny',

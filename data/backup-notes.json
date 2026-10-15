@@ -6,5 +6,13 @@
     "content": "시험 계정 B의 3차 침공 전 검증된 비공개 가상 메모 본문입니다.",
     "contentHash": "eef8755315bd87e7cdfa6c54ae226e96a57b0c6c839e0add4cd3a58ba8fb5e2f",
     "version": "backup_v1"
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "owner_id": "00000000-0000-4000-8000-00000000000b",
+    "title": "시험 계정 B 업무 일지 사본",
+    "content": "시험 계정 B의 3차 침공 전 검증된 비공개 가상 메모 본문입니다.",
+    "contentHash": "eef8755315bd87e7cdfa6c54ae226e96a57b0c6c839e0add4cd3a58ba8fb5e2f",
+    "version": "backup_v1"
   }
 ]

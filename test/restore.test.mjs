@@ -196,3 +196,41 @@ test('대상 ID가 지정되지 않거나 사본이 없으면 복원 검증이 �
   assert.equal(emptyCandidateResult.reason, 'backup_not_found');
 });
 
+test('B의 A 자료 요청은 거부되고 A 정상 요청은 유지된다 (zone_access_control)', async () => {
+  const { decide } = await import('../src/decider.mjs');
+  const bRequestsAReq = {
+    schema: 'aleph.decision.v1',
+    requestId: 'b-to-a-req-1',
+    classId: 'c1',
+    projectId: 'p1',
+    subjectId: TEST_ACCOUNT_B_ID,
+    deviceId: '0123456789abcdef',
+    service: 'notes',
+    method: 'GET',
+    path: `/api/notes/${TEST_ACCOUNT_A_ID}`,
+    route: 'GET /api/notes/:id',
+    queryLength: 0,
+    querySha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    at: new Date().toISOString(),
+    policyRevision: 1,
+    deviceRegistered: true,
+    stepUp: { verified: false, authAgeSeconds: null },
+    recentEvents: [],
+    signals: { source: 'judge_fixture', region: 'local', network: 'usual', hour: 12 },
+  };
+
+  const bResult = await decide(bRequestsAReq);
+  assert.equal(bResult.decision, 'deny');
+  assert.equal(bResult.reasonCode, 'route_not_allowed');
+  assert.deepEqual(bResult.ruleIds, ['zone_access_control']);
+
+  const aNormalReq = {
+    ...bRequestsAReq,
+    requestId: 'a-normal-req-1',
+    subjectId: TEST_ACCOUNT_A_ID,
+  };
+  const aResult = await decide(aNormalReq);
+  assert.equal(aResult.decision, 'allow');
+  assert.equal(aResult.reasonCode, 'approved');
+});
+

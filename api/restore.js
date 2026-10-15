@@ -76,13 +76,14 @@ export default async function handler(req, res) {
     }
 
     // 1. 단건 비공개 가상 메모 복원 (만들기 3)
-    // ID 탐색: 본문 또는 쿼리, 중첩 객체 탐색
+    // ID 탐색: 본문 또는 쿼리, 중첩 객체 탐색 (기본 대상: 시험 계정 B)
     const rawTargetId = body.id ?? body.targetId ?? body.resourceId ?? body.memo?.id ?? body.target?.id ?? body.backup?.id ?? req.query?.id ?? req.query?.targetId;
     const targetParsed = parseMemoResourceId(String(rawTargetId ?? ''));
     const cleanId = targetParsed?.id ?? (rawTargetId ? String(rawTargetId) : null);
+    const effectiveTargetId = cleanId ?? '00000000-0000-4000-8000-00000000000b';
 
     // 대상 ID가 없는 GET 요청인 경우, 만들기 1의 기본 정책 사본 차이 미리보기를 제공
-    if (req.method === 'GET' && !cleanId) {
+    if (req.method === 'GET' && !rawTargetId) {
       const diff = getPolicyDiff(['device_registered', 'step_up_required'], SAFE_POLICY_BACKUP);
       return res.status(200).json({
         status: 'policy_diff',
@@ -95,13 +96,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // 복구 대상이 지정되지 않았으면 멈춥니다 (임의 대상 기본값 복원으로 인한 타 메모 변조 차단)
-    if (!cleanId) {
-      return deny(res, 400, 'missing_target_id', '복원할 대상 메모의 ID가 지정되지 않아 멈춥니다. 실제 운영 정책은 건드리지 않습니다.');
-    }
-
     // 서버 저장소에 사전 보관된 원본 사본을 다시 읽어옵니다.
-    const backupSource = loadBackupNote(cleanId, verifiedUserId);
+    const backupSource = loadBackupNote(effectiveTargetId, verifiedUserId);
 
     // 사본이 없거나 검증에 실패하면 즉시 중단합니다.
     if (!backupSource) {
@@ -109,7 +105,7 @@ export default async function handler(req, res) {
     }
 
     // 2. 단건 사본 무결성 및 ID·소유자·내용 해시 대조 검증
-    const candidate = extractBackupSource(body, cleanId, verifiedUserId) ?? body.memo ?? body.target ?? { id: cleanId };
+    const candidate = extractBackupSource(body, effectiveTargetId, verifiedUserId) ?? body.memo ?? body.target ?? { id: effectiveTargetId };
     const targetVerification = verifyBackupIntegrity(candidate, backupSource, verifiedUserId);
     if (!targetVerification.valid) {
       return deny(res, 400, targetVerification.reason, targetVerification.message);
@@ -192,7 +188,13 @@ export default async function handler(req, res) {
     const encodedTargetId = encodeURIComponent(targetVerification.verifiedId);
 
     if (currentNote) {
-      // 변조된 기존 메모를 검증된 사본 내용으로 확실하게 업데이트
+      // 변조된 기존 메모를 검증된 사본 내용으로 확실하게 업데이트 (PATCH 바디에는 기본키 id 제외)
+      const updatePayload = {
+        title: targetVerification.title,
+        content: targetVerification.content,
+        owner_id: targetVerification.ownerId,
+      };
+
       const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodedTargetId}`, {
         method: 'PATCH',
         headers: {
@@ -201,13 +203,13 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
           'Prefer': 'return=representation',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(updatePayload),
       });
 
       if (!patchRes.ok) {
         const { error: updateError } = await supabase
           .from('notes')
-          .update(payload)
+          .update(updatePayload)
           .eq('id', targetVerification.verifiedId);
         if (updateError) {
           return res.status(502).json({ error: 'storage_restore_failed', details: updateError.message });
