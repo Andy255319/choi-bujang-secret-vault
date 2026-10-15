@@ -98,10 +98,16 @@ export default async function handler(req, res) {
     }
 
     // 1. 단건 비공개 가상 메모 복원 (만들기 3)
-    // ID 탐색: 본문 또는 쿼리, 중첩 객체 탐색 (기본 대상: 시험 계정 B)
+    // ID 탐색: 본문 또는 쿼리, 중첩 객체 탐색
     const rawTargetId = body.id ?? body.targetId ?? body.resourceId ?? body.memo?.id ?? body.target?.id ?? body.backup?.id ?? req.query?.id ?? req.query?.targetId;
     const targetParsed = parseMemoResourceId(String(rawTargetId ?? ''));
     const cleanId = targetParsed?.id ?? (rawTargetId ? String(rawTargetId) : null);
+
+    // 사본이 없거나 대상이 명시되지 않은 POST 요청은 즉시 멈춥니다 (사본 부재 엄격 중단)
+    if (req.method === 'POST' && !cleanId && !body.backup && !body.memo && !body.target && body.content === undefined && body.contentHash === undefined) {
+      return deny(res, 400, 'backup_not_found', '사본이 없거나 검증에 실패하여 멈춥니다. 실제 운영 정책은 건드리지 않습니다.');
+    }
+
     const effectiveTargetId = cleanId ?? '00000000-0000-4000-8000-00000000000b';
 
     // 서버 저장소에 사전 보관된 원본 사본을 다시 읽어옵니다.

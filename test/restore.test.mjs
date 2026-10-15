@@ -207,6 +207,11 @@ test('대상 ID가 지정되지 않거나 사본이 없으면 복원 검증이 �
   const emptyCandidateResult = verifyBackupIntegrity({}, null, TEST_ACCOUNT_B_ID);
   assert.equal(emptyCandidateResult.valid, false);
   assert.equal(emptyCandidateResult.reason, 'backup_not_found');
+
+  // 사본 자체가 null이면 즉시 중단 확인
+  const nullBackupResult = verifyBackupIntegrity({ id: TEST_ACCOUNT_B_ID }, null, TEST_ACCOUNT_B_ID);
+  assert.equal(nullBackupResult.valid, false);
+  assert.equal(nullBackupResult.reason, 'backup_not_found');
 });
 
 test('B의 A 자료 요청은 거부되고 A 정상 요청은 유지된다 (zone_access_control)', async () => {
