@@ -58,15 +58,17 @@ export function loadBackupNote(targetId, ownerId) {
   const cleanId = parsedTarget?.id ?? (targetId ? String(targetId) : '00000000-0000-4000-8000-00000000000b');
   if (!cleanId) return null;
 
-  // 1. 파일에서 먼저 다시 읽기 시도 및 무결성 검증 (다양한 런타임 경로)
+  // 1. 파일에서 먼저 실시간으로 다시 읽기 시도 및 무결성 검증 (다양한 런타임 경로)
   const candidatePaths = [
     path.join(process.cwd(), 'data', 'backup-notes.json'),
     path.join(import.meta.dirname, '..', 'data', 'backup-notes.json'),
   ];
 
+  let fileChecked = false;
   for (const backupPath of candidatePaths) {
     try {
       if (fs.existsSync(backupPath)) {
+        fileChecked = true;
         const raw = fs.readFileSync(backupPath, 'utf8');
         const list = JSON.parse(raw);
         if (Array.isArray(list)) {
@@ -74,37 +76,40 @@ export function loadBackupNote(targetId, ownerId) {
             const parsedItem = parseMemoResourceId(String(item.id ?? ''));
             return (parsedItem?.id ?? item.id) === cleanId;
           });
-          if (found) {
-            const verified = verifyLoadedBackup(found);
-            // 사본을 다시 읽었으나 검증에 실패(해시 불일치/변조)한 경우 즉시 중단(null)
-            return verified;
+          if (!found) {
+            // 파일이 존재하는데 해당 ID가 없으면 임의 폴백 없이 즉시 중단(null)
+            return null;
           }
+          // 사본을 다시 읽은 뒤 내용 해시 검증. 실패 시 null 반환하여 즉시 멈춤
+          return verifyLoadedBackup(found);
         }
+        return null;
       }
     } catch {
-      // 다음 경로 시도
+      // 파일 파싱 실패(손상/변조) 시 즉시 중단(null)
+      return null;
     }
   }
 
-  // 2. 정적 번들된 사본 목록에서 조회 및 무결성 검증
-  if (Array.isArray(backupNotesData)) {
-    const found = backupNotesData.find(item => {
+  // 파일이 아예 존재하지 않는 특수 런타임 환경에서만 정적 번들/내장 사본 참조
+  if (!fileChecked) {
+    if (Array.isArray(backupNotesData)) {
+      const found = backupNotesData.find(item => {
+        const parsedItem = parseMemoResourceId(String(item.id ?? ''));
+        return (parsedItem?.id ?? item.id) === cleanId;
+      });
+      if (found) {
+        return verifyLoadedBackup(found);
+      }
+    }
+
+    const builtin = BUILTIN_BACKUP_NOTES.find(item => {
       const parsedItem = parseMemoResourceId(String(item.id ?? ''));
       return (parsedItem?.id ?? item.id) === cleanId;
     });
-    if (found) {
-      const verified = verifyLoadedBackup(found);
-      return verified;
+    if (builtin) {
+      return verifyLoadedBackup(builtin);
     }
-  }
-
-  // 3. 내장 검증 사본에서 조회 및 무결성 검증
-  const builtin = BUILTIN_BACKUP_NOTES.find(item => {
-    const parsedItem = parseMemoResourceId(String(item.id ?? ''));
-    return (parsedItem?.id ?? item.id) === cleanId;
-  });
-  if (builtin) {
-    return verifyLoadedBackup(builtin);
   }
 
   return null;
@@ -112,7 +117,7 @@ export function loadBackupNote(targetId, ownerId) {
 
 /**
  * 요청 본문에서 지정한 ID에 해당하는 사본 객체를 추출합니다.
- * 사본이 배열이거나 객체인 경우 모두 지원합니다.
+ * 사본이 배열이거나 객체인 경우 모두 지원하며, 변조 여부 대조를 위해 빠짐없이 추출합니다.
  */
 export function extractBackupSource(body, targetId, ownerId) {
   if (!body || typeof body !== 'object') return null;
@@ -127,6 +132,7 @@ export function extractBackupSource(body, targetId, ownerId) {
       return (p?.id ?? item.id) === cleanId;
     });
     if (found) return found;
+    if (body.backup.length > 0) return body.backup[0];
   }
 
   // 2) body.backup.notes가 배열인 경우
@@ -136,14 +142,12 @@ export function extractBackupSource(body, targetId, ownerId) {
       return (p?.id ?? item.id) === cleanId;
     });
     if (found) return found;
+    if (body.backup.notes.length > 0) return body.backup.notes[0];
   }
 
-  // 3) body.backup이 단건 객체인 경우
+  // 3) body.backup이 단건 객체인 경우 (id 존재 여부와 무관하게 변조 검증을 위해 추출)
   if (body.backup && typeof body.backup === 'object' && !Array.isArray(body.backup)) {
-    const p = parseMemoResourceId(String(body.backup.id ?? ''));
-    if (!cleanId || (p?.id ?? body.backup.id) === cleanId) {
-      return body.backup;
-    }
+    return body.backup;
   }
 
   // 4) body.backupNotes 또는 body.notes가 배열인 경우
@@ -154,6 +158,7 @@ export function extractBackupSource(body, targetId, ownerId) {
       return (p?.id ?? item.id) === cleanId;
     });
     if (found) return found;
+    if (candidateList.length > 0) return candidateList[0];
   }
 
   // 5) body.memo 또는 body.target인 경우

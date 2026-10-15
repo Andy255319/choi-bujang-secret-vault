@@ -156,6 +156,19 @@ test('배열 형태의 사본이나 변조된 내용이 전달된 경우 사본 
   const verifyResult = verifyBackupIntegrity(extracted, backupSampleB, TEST_ACCOUNT_B_ID);
   assert.equal(verifyResult.valid, false);
   assert.match(verifyResult.reason, /content_hash/u);
+
+  // id 없는 단건 사본 객체가 전달된 경우에도 빠짐없이 추출되어 변조 거부 확인
+  const bodyWithAnonymousBackup = {
+    backup: {
+      content: '변조된 익명 본문',
+      contentHash: 'tampered_hash',
+    },
+  };
+  const extractedAnon = extractBackupSource(bodyWithAnonymousBackup, TEST_ACCOUNT_B_ID, TEST_ACCOUNT_B_ID);
+  assert.ok(extractedAnon);
+  const verifyAnonResult = verifyBackupIntegrity(extractedAnon, backupSampleB, TEST_ACCOUNT_B_ID);
+  assert.equal(verifyAnonResult.valid, false);
+  assert.match(verifyAnonResult.reason, /content_hash/u);
 });
 
 test('GET /api/restore 사전 조회 요청은 decider의 zone_access_control에서 허용된다', async () => {

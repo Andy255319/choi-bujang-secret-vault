@@ -227,10 +227,7 @@ export default async function handler(req, res) {
       });
 
       if (patchRes.ok) {
-        const patchData = await patchRes.json();
-        if (Array.isArray(patchData) && patchData.length > 0) {
-          restoredSuccessfully = true;
-        }
+        restoredSuccessfully = true;
       }
 
       if (!restoredSuccessfully && targetVerification.ownerId) {
@@ -245,10 +242,7 @@ export default async function handler(req, res) {
           body: JSON.stringify(updatePayload),
         });
         if (ownerPatchRes.ok) {
-          const ownerPatchData = await ownerPatchRes.json();
-          if (Array.isArray(ownerPatchData) && ownerPatchData.length > 0) {
-            restoredSuccessfully = true;
-          }
+          restoredSuccessfully = true;
         }
       }
     }
