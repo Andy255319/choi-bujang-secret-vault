@@ -23,3 +23,11 @@
 {"timestamp":"2026-09-27T13:19:27+09:00","alertId":"ps-14","action":"alert","reason":"모니터링 알림: 경보 ps-14 기반 시작 폴더 변경 의심"}
 {"timestamp":"2026-09-27T14:08:14+09:00","alertId":"ps-15","action":"alert","reason":"모니터링 알림: 경보 ps-15 기반 낯선 예약 작업 등록 의심"}
 {"timestamp":"2026-09-27T15:16:42+09:00","alertId":"ps-16","action":"alert","reason":"모니터링 알림: 경보 ps-16 기반 서명 없는 새 서비스 등록 의심"}
+{"timestamp":"2026-09-27T09:26:14+09:00","alertId":"pv-10","action":"alert","reason":"모니터링 알림: 경보 pv-10 기반 처음 보는 관리자 명령 의심"}
+{"timestamp":"2026-09-27T10:14:33+09:00","alertId":"pv-11","action":"alert","reason":"모니터링 알림: 경보 pv-11 기반 관리자 그룹 추가 의심"}
+{"timestamp":"2026-09-27T10:47:09+09:00","alertId":"pv-12","action":"alert","reason":"모니터링 알림: 경보 pv-12 기반 처음 보는 관리자 명령 의심"}
+{"timestamp":"2026-09-27T11:21:16+09:00","alertId":"pv-13","action":"alert","reason":"모니터링 알림: 경보 pv-13 기반 관리자 그룹 추가 의심"}
+{"timestamp":"2026-09-27T12:06:48+09:00","alertId":"pv-14","action":"alert","reason":"모니터링 알림: 경보 pv-14 기반 처음 보는 관리자 명령 의심"}
+{"timestamp":"2026-09-27T13:17:05+09:00","alertId":"pv-15","action":"alert","reason":"모니터링 알림: 경보 pv-15 기반 관리자 그룹 추가 의심"}
+{"timestamp":"2026-09-27T14:07:22+09:00","alertId":"pv-16","action":"alert","reason":"모니터링 알림: 경보 pv-16 기반 처음 보는 관리자 명령 의심"}
+{"timestamp":"2026-09-27T15:19:41+09:00","alertId":"pv-17","action":"alert","reason":"모니터링 알림: 경보 pv-17 기반 관리자 그룹 추가 의심"}
