@@ -48,21 +48,43 @@ export default async function handler(req, res) {
     // 0. 정책 복원 요청인 경우 (만들기 1 & 2: 운영 정책은 건드리지 않고 차이 및 버전 확인)
     const isPolicyRequest = body.type === 'policy' || body.target === 'policy' || Array.isArray(body.rules) || req.query?.type === 'policy';
     if (isPolicyRequest) {
-      const currentRules = Array.isArray(body.rules) ? body.rules : ['device_registered', 'step_up_required'];
-      const diff = getPolicyDiff(currentRules, SAFE_POLICY_BACKUP);
-      const isDryRun = req.method === 'GET' || body.dryRun === true || body.action === 'diff';
+      let policyBackup = SAFE_POLICY_BACKUP;
+      if (body.backup !== undefined) {
+        if (!body.backup || typeof body.backup !== 'object') {
+          return deny(res, 400, 'backup_not_found', '정책 사본이 없거나 검증에 실패하여 멈춥니다. 실제 운영 정책은 건드리지 않습니다.');
+        }
+        policyBackup = body.backup;
+      }
+
+      let diff;
+      try {
+        const currentRules = Array.isArray(body.rules) ? body.rules : ['device_registered', 'step_up_required'];
+        diff = getPolicyDiff(currentRules, policyBackup);
+      } catch {
+        return deny(res, 400, 'backup_verification_failed', '사본이 없거나 검증에 실패하여 멈춥니다. 실제 운영 정책은 건드리지 않습니다.');
+      }
+
+      const isDryRun = req.method === 'GET' || body.dryRun === true || body.action === 'diff' || body.preview === true;
       if (isDryRun) {
         return res.status(200).json({
           status: 'policy_diff',
           verified: true,
-          targetVersion: SAFE_POLICY_BACKUP.version,
+          targetVersion: policyBackup.version ?? SAFE_POLICY_BACKUP.version,
           changes: diff.changes,
           before: diff.before,
           after: diff.after,
           message: '실제 운영 정책은 건드리지 않습니다.',
         });
       }
-      const restored = restorePolicy(currentRules, SAFE_POLICY_BACKUP);
+
+      let restored;
+      try {
+        const currentRules = Array.isArray(body.rules) ? body.rules : ['device_registered', 'step_up_required'];
+        restored = restorePolicy(currentRules, policyBackup);
+      } catch {
+        return deny(res, 400, 'restore_failed', '사본 검증 실패로 복원을 중단합니다.');
+      }
+
       return res.status(200).json({
         status: 'policy_restored',
         verified: true,
@@ -118,22 +140,13 @@ export default async function handler(req, res) {
 
     let currentNote = null;
     try {
-      const { data: rows, error: selectError } = await supabase
-        .from('notes')
-        .select('id, title, content, owner_id')
-        .eq('id', targetVerification.verifiedId);
-
-      if (!selectError && Array.isArray(rows) && rows.length > 0) {
-        currentNote = rows[0];
-      } else {
-        const directSelect = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(targetVerification.verifiedId)}&select=id,title,content,owner_id`, {
-          headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` },
-        });
-        if (directSelect.ok) {
-          const fetchedRows = await directSelect.json();
-          if (Array.isArray(fetchedRows) && fetchedRows.length > 0) {
-            currentNote = fetchedRows[0];
-          }
+      const directSelect = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(targetVerification.verifiedId)}&select=id,title,content,owner_id`, {
+        headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` },
+      });
+      if (directSelect.ok) {
+        const fetchedRows = await directSelect.json();
+        if (Array.isArray(fetchedRows) && fetchedRows.length > 0) {
+          currentNote = fetchedRows[0];
         }
       }
 
@@ -180,37 +193,29 @@ export default async function handler(req, res) {
         status: 'preview',
         dryRun: true,
         version: targetVerification.version,
-        id: targetVerification.verifiedId,
+        id: effectiveNoteId,
         resourceId: targetVerification.resourceId,
         owner_id: targetVerification.ownerId,
         contentHash: targetVerification.contentHash,
         changes: changes.length > 0 ? changes : ['none'],
         before: currentNote ? { id: currentNote.id, title: currentNote.title, content: currentNote.content } : null,
-        after: { id: targetVerification.verifiedId, title: targetVerification.title, content: targetVerification.content },
+        after: { id: effectiveNoteId, title: targetVerification.title, content: targetVerification.content },
         message: '실제 운영 정책은 건드리지 않습니다.',
       });
     }
 
     // 4. 검증된 원본 사본 내용으로 Supabase DB에 안전하게 단 1건 복원
     // (메모가 이미 존재/변조된 경우 PATCH로 내용 복원, 삭제된 경우 POST로 생성 복원)
-    const payload = {
-      id: effectiveNoteId,
+    let restoredSuccessfully = false;
+    const updatePayload = {
       title: targetVerification.title,
       content: targetVerification.content,
       owner_id: targetVerification.ownerId,
     };
 
-    const encodedTargetId = encodeURIComponent(effectiveNoteId);
-
     if (currentNote) {
       // 변조된 기존 메모를 검증된 사본 내용으로 확실하게 업데이트 (PATCH 바디에는 기본키 id 제외)
-      const updatePayload = {
-        title: targetVerification.title,
-        content: targetVerification.content,
-        owner_id: targetVerification.ownerId,
-      };
-
-      const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodedTargetId}`, {
+      const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(currentNote.id)}`, {
         method: 'PATCH',
         headers: {
           'apikey': SUPABASE_SECRET_KEY,
@@ -221,17 +226,42 @@ export default async function handler(req, res) {
         body: JSON.stringify(updatePayload),
       });
 
-      if (!patchRes.ok) {
-        const { error: updateError } = await supabase
-          .from('notes')
-          .update(updatePayload)
-          .eq('id', effectiveNoteId);
-        if (updateError) {
-          return res.status(502).json({ error: 'storage_restore_failed', details: updateError.message });
+      if (patchRes.ok) {
+        const patchData = await patchRes.json();
+        if (Array.isArray(patchData) && patchData.length > 0) {
+          restoredSuccessfully = true;
         }
       }
-    } else {
-      // 삭제된 메모를 검증된 사본 내용으로 새로 생성
+
+      if (!restoredSuccessfully && targetVerification.ownerId) {
+        const ownerPatchRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?owner_id=eq.${encodeURIComponent(targetVerification.ownerId)}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_SECRET_KEY,
+            'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(updatePayload),
+        });
+        if (ownerPatchRes.ok) {
+          const ownerPatchData = await ownerPatchRes.json();
+          if (Array.isArray(ownerPatchData) && ownerPatchData.length > 0) {
+            restoredSuccessfully = true;
+          }
+        }
+      }
+    }
+
+    // 메모가 삭제되었거나 PATCH로 갱신되지 않은 경우 POST로 새로 생성
+    if (!restoredSuccessfully) {
+      const insertPayload = {
+        id: effectiveNoteId,
+        title: targetVerification.title,
+        content: targetVerification.content,
+        owner_id: targetVerification.ownerId,
+      };
+
       const postRes = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
         method: 'POST',
         headers: {
@@ -240,17 +270,30 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
           'Prefer': 'return=representation',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(insertPayload),
       });
 
-      if (!postRes.ok) {
-        const { error: insertError } = await supabase
-          .from('notes')
-          .insert(payload);
-        if (insertError) {
-          return res.status(502).json({ error: 'storage_restore_failed', details: insertError.message });
+      if (postRes.ok) {
+        restoredSuccessfully = true;
+      } else {
+        const retryPatch = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(effectiveNoteId)}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_SECRET_KEY,
+            'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(updatePayload),
+        });
+        if (retryPatch.ok) {
+          restoredSuccessfully = true;
         }
       }
+    }
+
+    if (!restoredSuccessfully) {
+      return res.status(502).json({ error: 'storage_restore_failed', message: 'DB 복원에 실패했습니다.' });
     }
 
     // 5. 실행 전 버전과 바뀔 항목을 포함한 결과 응답 (감사 기록 및 다른 자료 보존)
@@ -259,13 +302,13 @@ export default async function handler(req, res) {
       restoredCount: 1,
       auditPreserved: true,
       version: targetVerification.version,
-      id: targetVerification.verifiedId,
+      id: effectiveNoteId,
       resourceId: targetVerification.resourceId,
       owner_id: targetVerification.ownerId,
       contentHash: targetVerification.contentHash,
       changes: changes.length > 0 ? changes : ['none'],
       before: currentNote ? { id: currentNote.id, title: currentNote.title, content: currentNote.content } : null,
-      after: { id: payload.id, title: payload.title, content: payload.content },
+      after: { id: effectiveNoteId, title: targetVerification.title, content: targetVerification.content },
       message: '지정한 단 1건의 메모만 복원되었으며, 다른 메모와 감사 기록은 보존되었습니다.',
     });
   } catch {
