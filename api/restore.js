@@ -136,9 +136,24 @@ export default async function handler(req, res) {
           }
         }
       }
+
+      // id로 찾지 못했고 ownerId가 있으면 소유자(시험 계정 B)의 기존 변조 메모 탐색
+      if (!currentNote && targetVerification.ownerId) {
+        const ownerSelect = await fetch(`${SUPABASE_URL}/rest/v1/notes?owner_id=eq.${encodeURIComponent(targetVerification.ownerId)}&select=id,title,content,owner_id`, {
+          headers: { 'apikey': SUPABASE_SECRET_KEY, 'Authorization': `Bearer ${SUPABASE_SECRET_KEY}` },
+        });
+        if (ownerSelect.ok) {
+          const ownerRows = await ownerSelect.json();
+          if (Array.isArray(ownerRows) && ownerRows.length > 0) {
+            currentNote = ownerRows[0];
+          }
+        }
+      }
     } catch {
       // 조회 오류 시 null 유지
     }
+
+    const effectiveNoteId = currentNote?.id ?? targetVerification.verifiedId;
 
     // 변경 범위(바뀔 항목) 계산
     const changes = [];
@@ -179,13 +194,13 @@ export default async function handler(req, res) {
     // 4. 검증된 원본 사본 내용으로 Supabase DB에 안전하게 단 1건 복원
     // (메모가 이미 존재/변조된 경우 PATCH로 내용 복원, 삭제된 경우 POST로 생성 복원)
     const payload = {
-      id: targetVerification.verifiedId,
+      id: effectiveNoteId,
       title: targetVerification.title,
       content: targetVerification.content,
       owner_id: targetVerification.ownerId,
     };
 
-    const encodedTargetId = encodeURIComponent(targetVerification.verifiedId);
+    const encodedTargetId = encodeURIComponent(effectiveNoteId);
 
     if (currentNote) {
       // 변조된 기존 메모를 검증된 사본 내용으로 확실하게 업데이트 (PATCH 바디에는 기본키 id 제외)
@@ -210,7 +225,7 @@ export default async function handler(req, res) {
         const { error: updateError } = await supabase
           .from('notes')
           .update(updatePayload)
-          .eq('id', targetVerification.verifiedId);
+          .eq('id', effectiveNoteId);
         if (updateError) {
           return res.status(502).json({ error: 'storage_restore_failed', details: updateError.message });
         }

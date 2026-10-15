@@ -161,7 +161,7 @@ export function extractBackupSource(body, targetId, ownerId) {
   if (body.target && typeof body.target === 'object') return body.target;
 
   // 6) body 자체가 단건 사본/대상이고 content 또는 hash가 있는 경우 (변조 검증 대상)
-  if (body.content !== undefined || body.contentHash !== undefined || body.hash !== undefined) {
+  if (body.content !== undefined || body.body !== undefined || body.text !== undefined || body.contentHash !== undefined || body.hash !== undefined) {
     return body;
   }
 

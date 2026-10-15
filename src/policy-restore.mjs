@@ -25,6 +25,13 @@ export function getPolicyDiff(currentRules, backup = SAFE_POLICY_BACKUP) {
     throw new Error('현재 정책 목록이 올바르지 않습니다. (current_policy_invalid)');
   }
 
+  // 필수 안전 규칙 무결성 검증
+  const requiredRules = ['device_registered', 'step_up_required', 'unusual_bulk_read_step_up', 'zone_access_control'];
+  const hasAllRequired = requiredRules.every(r => backup.rules.includes(r));
+  if (!hasAllRequired) {
+    throw new Error('안전 정책 사본의 필수 규칙이 누락되어 검증에 실패했습니다.');
+  }
+
   const currentSet = new Set(currentRules);
   const backupSet = new Set(backup.rules);
 
@@ -54,7 +61,7 @@ export function restorePolicy(currentRules, backup = SAFE_POLICY_BACKUP) {
     throw new Error('정책 사본 검증에 실패하여 복원을 중단합니다.');
   }
 
-  // 다른 규칙(안전 사본에 포함되지 않은 기타 서비스 규칙)은 보존
+  // 다른 규칙(안전 사본에 포함되지 않은 기타 서비스 규칙, 감사 규칙 등)은 보존
   const preservedOtherRules = currentRules.filter(r => !backup.rules.includes(r));
   const restoredRules = Array.from(new Set([...backup.rules, ...preservedOtherRules]));
 
@@ -62,6 +69,9 @@ export function restorePolicy(currentRules, backup = SAFE_POLICY_BACKUP) {
     success: true,
     restoredVersion: diff.targetVersion,
     restoredRules,
+    changes: diff.changes,
+    before: diff.before,
+    after: restoredRules,
     diff,
   };
 }
