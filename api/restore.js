@@ -104,20 +104,6 @@ export default async function handler(req, res) {
     const cleanId = targetParsed?.id ?? (rawTargetId ? String(rawTargetId) : null);
     const effectiveTargetId = cleanId ?? '00000000-0000-4000-8000-00000000000b';
 
-    // 대상 ID가 없는 GET 요청인 경우, 만들기 1의 기본 정책 사본 차이 미리보기를 제공
-    if (req.method === 'GET' && !rawTargetId) {
-      const diff = getPolicyDiff(['device_registered', 'step_up_required'], SAFE_POLICY_BACKUP);
-      return res.status(200).json({
-        status: 'policy_diff',
-        verified: true,
-        targetVersion: SAFE_POLICY_BACKUP.version,
-        changes: diff.changes,
-        before: diff.before,
-        after: diff.after,
-        message: '실제 운영 정책은 건드리지 않습니다.',
-      });
-    }
-
     // 서버 저장소에 사전 보관된 원본 사본을 다시 읽어옵니다.
     const backupSource = loadBackupNote(effectiveTargetId, verifiedUserId);
 
@@ -168,7 +154,7 @@ export default async function handler(req, res) {
 
     const effectiveNoteId = currentNote?.id ?? targetVerification.verifiedId;
 
-    // 변경 범위(바뀔 항목) 계산
+    // 변경 범위(바뀔 항목) 계산: 실행 전에 버전과 바뀔 항목을 명확히 제시
     const changes = [];
     if (!currentNote) {
       changes.push('create');
@@ -178,7 +164,7 @@ export default async function handler(req, res) {
       if (currentNote.owner_id !== targetVerification.ownerId) changes.push('owner_id');
     }
 
-    // GET 요청이거나 dryRun인 경우 실행 전 버전과 바뀔 항목만 미리보기로 반환
+    // GET 요청이거나 dryRun인 경우 실행 전 버전과 바뀔 항목을 미리보기로 반환 (실제 운영 정책은 건드리지 않음)
     const isDryRun = req.method === 'GET'
       || body.dryRun === true
       || body.dry_run === true
@@ -193,6 +179,7 @@ export default async function handler(req, res) {
         status: 'preview',
         dryRun: true,
         version: targetVerification.version,
+        targetVersion: targetVerification.version,
         id: effectiveNoteId,
         resourceId: targetVerification.resourceId,
         owner_id: targetVerification.ownerId,
@@ -200,77 +187,54 @@ export default async function handler(req, res) {
         changes: changes.length > 0 ? changes : ['none'],
         before: currentNote ? { id: currentNote.id, title: currentNote.title, content: currentNote.content } : null,
         after: { id: effectiveNoteId, title: targetVerification.title, content: targetVerification.content },
-        message: '실제 운영 정책은 건드리지 않습니다.',
+        message: '사본 검증 완료. 실행 전에 버전과 바뀔 항목을 보여 줍니다. 실제 운영 정책은 건드리지 않습니다.',
       });
     }
 
     // 4. 검증된 원본 사본 내용으로 Supabase DB에 안전하게 단 1건 복원
-    // (메모가 이미 존재/변조된 경우 PATCH로 내용 복원, 삭제된 경우 POST로 생성 복원)
+    // (PostgREST upsert: resolution=merge-duplicates를 사용하여 삭제(INSERT)와 변조(UPDATE)를 모두 원자적으로 복원)
     let restoredSuccessfully = false;
-    const updatePayload = {
+    const notePayload = {
+      id: effectiveNoteId,
       title: targetVerification.title,
       content: targetVerification.content,
       owner_id: targetVerification.ownerId,
     };
 
-    if (currentNote) {
-      // 변조된 기존 메모를 검증된 사본 내용으로 확실하게 업데이트 (PATCH 바디에는 기본키 id 제외)
-      const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(currentNote.id)}`, {
-        method: 'PATCH',
-        headers: {
-          'apikey': SUPABASE_SECRET_KEY,
-          'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=representation',
-        },
-        body: JSON.stringify(updatePayload),
-      });
-
-      if (patchRes.ok) {
-        restoredSuccessfully = true;
-      }
-
-      if (!restoredSuccessfully && targetVerification.ownerId) {
-        const ownerPatchRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?owner_id=eq.${encodeURIComponent(targetVerification.ownerId)}`, {
-          method: 'PATCH',
-          headers: {
-            'apikey': SUPABASE_SECRET_KEY,
-            'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation',
-          },
-          body: JSON.stringify(updatePayload),
-        });
-        if (ownerPatchRes.ok) {
-          restoredSuccessfully = true;
-        }
-      }
-    }
-
-    // 메모가 삭제되었거나 PATCH로 갱신되지 않은 경우 POST로 새로 생성
-    if (!restoredSuccessfully) {
-      const insertPayload = {
-        id: effectiveNoteId,
-        title: targetVerification.title,
-        content: targetVerification.content,
-        owner_id: targetVerification.ownerId,
-      };
-
-      const postRes = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
+    try {
+      // 4-1. PostgREST upsert 시도 (삭제·변조 모두 단일 쿼리로 안전 복구)
+      const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
         method: 'POST',
         headers: {
           'apikey': SUPABASE_SECRET_KEY,
           'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`,
           'Content-Type': 'application/json',
-          'Prefer': 'return=representation',
+          'Prefer': 'resolution=merge-duplicates,return=representation',
         },
-        body: JSON.stringify(insertPayload),
+        body: JSON.stringify(notePayload),
       });
 
-      if (postRes.ok) {
+      if (upsertRes.ok) {
         restoredSuccessfully = true;
-      } else {
-        const retryPatch = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(effectiveNoteId)}`, {
+      }
+    } catch {}
+
+    // 4-2. Supabase JS 클라이언트 upsert 폴백
+    if (!restoredSuccessfully) {
+      try {
+        const { error: sbError } = await supabase
+          .from('notes')
+          .upsert(notePayload, { onConflict: 'id' });
+        if (!sbError) {
+          restoredSuccessfully = true;
+        }
+      } catch {}
+    }
+
+    // 4-3. 변조된 기존 메모가 존재할 경우 PATCH를 통한 직접 갱신 보강
+    if (!restoredSuccessfully && currentNote) {
+      try {
+        const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(currentNote.id)}`, {
           method: 'PATCH',
           headers: {
             'apikey': SUPABASE_SECRET_KEY,
@@ -278,12 +242,17 @@ export default async function handler(req, res) {
             'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
-          body: JSON.stringify(updatePayload),
+          body: JSON.stringify({
+            title: targetVerification.title,
+            content: targetVerification.content,
+            owner_id: targetVerification.ownerId,
+          }),
         });
-        if (retryPatch.ok) {
+
+        if (patchRes.ok) {
           restoredSuccessfully = true;
         }
-      }
+      } catch {}
     }
 
     if (!restoredSuccessfully) {
