@@ -29,6 +29,23 @@ function formatSessionStatus(status) {
   return status ? `${label}(${status})` : label;
 }
 
+const DECISION_LABELS = {
+  allow: '접근 허용(allow)',
+  deny: '접근 거부(deny)',
+  challenge: '추가 인증 또는 확인 필요(challenge)',
+  unknown: '판정 확인 불가(unknown)',
+};
+
+function formatDecision(decision) {
+  return DECISION_LABELS[decision] || '판정 확인 불가(unknown)';
+}
+
+function formatCheckedAt(value) {
+  if (typeof value !== 'string' || !value) return '시각 정보 없음';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('ko-KR');
+}
+
 export function createStudentView() {
   return {
     renderIdentity(input) {
@@ -141,7 +158,119 @@ export function createStudentView() {
 
       return root;
     },
-    renderDecision() { return '학생 구현 대기: 서버의 판정과 이유를 연결하세요.'; },
+    renderDecision(input) {
+      const root = document.createElement('div');
+      root.className = 'student-decision-view';
+
+      // 1. 요청 전 (idle)
+      if (!input || input.status === 'idle') {
+        const p = document.createElement('p');
+        p.className = 'state state-empty';
+        p.textContent = '앱을 골라 접속을 요청하세요.';
+        root.appendChild(p);
+        return root;
+      }
+
+      // 2. 요청 중 (loading)
+      if (input.status === 'loading') {
+        const p = document.createElement('p');
+        p.className = 'state state-loading';
+        const appText = input.appId ? `[${input.appId}] ` : '';
+        p.textContent = `${appText}판정 확인 중…`;
+        root.appendChild(p);
+        return root;
+      }
+
+      // 3. 요청 실패 (error) - 접근 거부(차단) 판정과 명확히 구분
+      if (input.status === 'error') {
+        const p = document.createElement('p');
+        p.className = 'state state-error';
+        const msg = input.error?.message || '판정 요청에 실패했습니다.';
+        p.textContent = `요청 실패: ${msg}`;
+        root.appendChild(p);
+
+        const note = document.createElement('p');
+        note.className = 'muted';
+        note.textContent = '요청 실패는 접근 거부(차단) 판정이 아닙니다. 접근이 허용되지 않았습니다.';
+        root.appendChild(note);
+        return root;
+      }
+
+      // 4. 판정 수신 (ok)
+      if (input.status === 'ok') {
+        const data = input.data || {};
+        const appId = data.appId || input.appId || '알 수 없음';
+        const rawDecision = data.decision;
+        const decisionText = formatDecision(rawDecision);
+        const reason = data.reason || '사유 정보 없음';
+        const checkedAt = formatCheckedAt(data.checkedAt);
+
+        // 모드 배지 (demo, disconnected, unknown)
+        if (input.mode && MODE_LABELS[input.mode]) {
+          const modeBadge = document.createElement('span');
+          modeBadge.className = 'tag tag-demo';
+          modeBadge.textContent = MODE_LABELS[input.mode];
+          root.appendChild(modeBadge);
+        }
+
+        // 판정 결과 배너/문구
+        const decisionP = document.createElement('p');
+        const decisionClass = ['allow', 'deny', 'challenge'].includes(rawDecision) ? rawDecision : 'unknown';
+        decisionP.className = `decision decision-${decisionClass}`;
+        decisionP.textContent = `판정 결과: ${decisionText} · 대상 앱: ${appId}`;
+        root.appendChild(decisionP);
+
+        // 추가 안내문: challenge 및 unknown
+        if (rawDecision === 'challenge') {
+          const challengeNote = document.createElement('p');
+          challengeNote.className = 'muted';
+          challengeNote.textContent = '추가 확인이 필요합니다. 이 앱은 확인 절차를 대신 수행하지 않습니다.';
+          root.appendChild(challengeNote);
+        } else if (decisionClass === 'unknown') {
+          const unknownNote = document.createElement('p');
+          unknownNote.className = 'muted';
+          unknownNote.textContent = '판정을 확인할 수 없습니다. 접근이 허용되지 않았습니다.';
+          root.appendChild(unknownNote);
+        }
+
+        // 판정 상세 정보 (dl.kv)
+        const dl = document.createElement('dl');
+        dl.className = 'kv';
+
+        const dtApp = document.createElement('dt');
+        dtApp.textContent = '업무 앱';
+        const ddApp = document.createElement('dd');
+        ddApp.textContent = appId;
+        dl.appendChild(dtApp);
+        dl.appendChild(ddApp);
+
+        const dtDecision = document.createElement('dt');
+        dtDecision.textContent = '접속 판정';
+        const ddDecision = document.createElement('dd');
+        ddDecision.textContent = decisionText;
+        dl.appendChild(dtDecision);
+        dl.appendChild(ddDecision);
+
+        const dtReason = document.createElement('dt');
+        dtReason.textContent = '판정 이유';
+        const ddReason = document.createElement('dd');
+        ddReason.textContent = reason;
+        dl.appendChild(dtReason);
+        dl.appendChild(ddReason);
+
+        const dtTime = document.createElement('dt');
+        dtTime.textContent = '판정 시각';
+        const ddTime = document.createElement('dd');
+        ddTime.textContent = checkedAt;
+        dl.appendChild(dtTime);
+        dl.appendChild(ddTime);
+
+        root.appendChild(dl);
+        return root;
+      }
+
+      return root;
+    },
     renderEvents() { return '학생 구현 대기: 본인 접속·XDR 기록을 연결하세요.'; },
     renderStatus() { return '학생 구현 대기: 기기·세션·알림과 연결 점검 상태를 구분하세요.'; },
     renderVulnerabilities() { return '학생 구현 대기: 정확한 설치 버전·OSV 출처·조회 시각·부분 결과·조회 실패를 구분하세요.'; },
