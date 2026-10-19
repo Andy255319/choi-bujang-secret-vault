@@ -20,24 +20,31 @@ const MODE_LABELS = {
 };
 
 function formatDeviceStatus(status) {
-  const label = DEVICE_STATUS_LABELS[status] || '확인 불가';
+  const label = (typeof status === 'string' && Object.hasOwn(DEVICE_STATUS_LABELS, status))
+    ? DEVICE_STATUS_LABELS[status]
+    : '확인 불가';
   return status ? `${label}(${status})` : label;
 }
 
 function formatSessionStatus(status) {
-  const label = SESSION_STATUS_LABELS[status] || '확인 불가';
+  const label = (typeof status === 'string' && Object.hasOwn(SESSION_STATUS_LABELS, status))
+    ? SESSION_STATUS_LABELS[status]
+    : '확인 불가';
   return status ? `${label}(${status})` : label;
 }
 
-const DECISION_LABELS = {
+const DECISION_LABELS = Object.freeze({
   allow: '접근 허용(allow)',
   deny: '접근 거부(deny)',
   challenge: '추가 인증 또는 확인 필요(challenge)',
   unknown: '판정 확인 불가(unknown)',
-};
+});
 
 function formatDecision(decision) {
-  return DECISION_LABELS[decision] || '판정 확인 불가(unknown)';
+  if (typeof decision === 'string' && Object.hasOwn(DECISION_LABELS, decision)) {
+    return DECISION_LABELS[decision];
+  }
+  return '판정 확인 불가(unknown)';
 }
 
 function formatCheckedAt(value) {
@@ -200,7 +207,9 @@ export function createStudentView() {
       if (input.status === 'ok') {
         const data = input.data || {};
         const appId = data.appId || input.appId || '알 수 없음';
-        const rawDecision = data.decision;
+        const rawDecision = (typeof data.decision === 'string' && Object.hasOwn(DECISION_LABELS, data.decision))
+          ? data.decision
+          : 'unknown';
         const decisionText = formatDecision(rawDecision);
         const reason = data.reason || '사유 정보 없음';
         const checkedAt = formatCheckedAt(data.checkedAt);
