@@ -20,11 +20,13 @@ const MODE_LABELS = {
 };
 
 function formatDeviceStatus(status) {
-  return DEVICE_STATUS_LABELS[status] || '확인 불가';
+  const label = DEVICE_STATUS_LABELS[status] || '확인 불가';
+  return status ? `${label}(${status})` : label;
 }
 
 function formatSessionStatus(status) {
-  return SESSION_STATUS_LABELS[status] || '확인 불가';
+  const label = SESSION_STATUS_LABELS[status] || '확인 불가';
+  return status ? `${label}(${status})` : label;
 }
 
 export function createStudentView() {
@@ -45,13 +47,17 @@ export function createStudentView() {
       const devices = input.devices;
       const sessions = input.sessions;
 
-      // 1. 모드 안내 (demo, disconnected, unknown) - loading / error / ok 모든 상태에서 표시
-      const mode = me?.mode || devices?.mode || sessions?.mode;
-      if (mode && MODE_LABELS[mode]) {
-        const modeBadge = document.createElement('span');
-        modeBadge.className = 'tag tag-demo';
-        modeBadge.textContent = MODE_LABELS[mode];
-        root.appendChild(modeBadge);
+      // 1. 모드 안내 (demo, disconnected, unknown) - me, devices, sessions 각각 확인하여 표시
+      const checkedModes = new Set();
+      for (const res of [me, devices, sessions]) {
+        const m = res?.mode;
+        if (m && MODE_LABELS[m] && !checkedModes.has(m)) {
+          checkedModes.add(m);
+          const modeBadge = document.createElement('span');
+          modeBadge.className = 'tag tag-demo';
+          modeBadge.textContent = MODE_LABELS[m];
+          root.appendChild(modeBadge);
+        }
       }
 
       // 2. me (사용자 계정, 현재 기기, 현재 세션) 상태 처리
